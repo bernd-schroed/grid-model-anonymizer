@@ -361,7 +361,33 @@ def _get_full_name(obj) -> str:
         # fallback
         return f"{obj.GetClassName()}::{_get_loc_name(obj)}"
 
+def _to_project_relative(full_name: str) -> str:
+    """
+    Macht aus einem FullName wie:
+      \\user\\proj.IntPrj\\Network Model.IntPrjfolder\\...
+    einen Pfad relativ zum Projekt:
+      \\Network Model.IntPrjfolder\\...
+    """
+    marker = r"\Network Model.IntPrjfolder"
+    i = full_name.find(marker)
+    if i < 0:
+        return full_name  # fallback
+    return full_name[i:]
 
+
+def _search_by_full_name_after(app, full_name_after: str):
+    """
+    Sucht ein Objekt über SearchObject() mit relativem Pfad.
+    """
+    project = app.GetActiveProject()
+    if not project:
+        return None
+
+    rel = _to_project_relative(full_name_after)
+    try:
+        return project.SearchObject(rel)
+    except Exception:
+        return None
 # ----------------------------
 # Anonymize primitives
 # ----------------------------
@@ -541,30 +567,92 @@ def anonymize_objects(app, objects: List, seed: str, desc: bool, gps: bool, pref
 # ----------------------------
 def restore_from_mapping(app, mapping_path: Path):
     """
-    Restore in einem bereits importierten Projekt:
+    Restore in einem bereits importierten Projekt anhand der Mapping-JSON:
+    - GPS wiederherstellen (deleted=true zuerst, solange die anonymen FullNames noch gültig wären)
+      -> bevorzugt via CIM-Mapping (robust), optional Fallback via SearchObject
     - loc_name zurück
     - cimRdfId zurück
-    - GPS zurück aus gps_mapping:
-        - wenn "new" vorhanden: set old GPS (revert)
-        - wenn "deleted": finde Objekt über "full_name_after" (im anonymisierten Projekt) und set old GPS
+    - GPS wiederherstellen (für "new"-Fälle; nach cim-restore am stabilsten über orig cim)
     """
     data = load_mapping_json(mapping_path)
 
-    loc_map: Dict[str, str] = data.get("loc_name_mapping", {}) or {}
-    cim_map: Dict[str, str] = data.get("cimRdfId_mapping", {}) or {}
-    gps_map: Dict[str, dict] = data.get("gps_mapping", {}) or {}
+    loc_map: Dict[str, str] = data.get("loc_name_mapping", {}) or {}    # old -> new
+    cim_map: Dict[str, str] = data.get("cimRdfId_mapping", {}) or {}    # old -> new
+    gps_map: Dict[str, dict] = data.get("gps_mapping", {}) or {}        # key = orig cim (old)
 
     # reverse maps
-    loc_rev = {v: k for k, v in loc_map.items()}
-    cim_rev = {v: k for k, v in cim_map.items()}
+    loc_rev = {v: k for k, v in loc_map.items()}  # new -> old
+    cim_rev = {v: k for k, v in cim_map.items()}  # new -> old
 
     objects = collect_unique_objects_for_anonymization(app)
 
-    # 1) loc_name + cimRdfId restore (direkt an Objekten)
+    def _build_cim_index(objs: List) -> Dict[str, object]:
+        idx: Dict[str, object] = {}
+        for o in objs:
+            ids = _get_cim_rdf_id(o)
+            if ids:
+                idx[ids[0]] = o
+        return idx
+
+    def _search_by_full_name_after(app, full_name_after: str):
+
+        try:
+            prj = app.GetActiveProject()
+            if not prj:
+                return None
+        except Exception:
+            return None
+
+        s = str(full_name_after)
+
+        marker = ".IntPrj\\"
+        if marker in s:
+            s = "\\" + s.split(marker, 1)[1]
+
+        try:
+            return prj.SearchObject(s)
+        except Exception:
+            return None
+
+
+    cim_index_current = _build_cim_index(objects)
+
+    _pf_bulk_mode_begin(app)
+    try:
+        for orig_cim, rec in gps_map.items():
+            if not rec.get("deleted", False):
+                continue
+
+            old = rec.get("old")
+            if not (isinstance(old, list) and len(old) == 2):
+                continue
+            old_lat, old_lon = float(old[0]), float(old[1])
+
+            # bevorzugt: über CIM finden
+            current_cim = cim_map.get(orig_cim, orig_cim)
+            target = cim_index_current.get(current_cim)
+
+
+            if target is None:
+                fn = rec.get("full_name_after")
+                if isinstance(fn, str) and fn:
+                    target = _search_by_full_name_after(app, fn)
+
+            if target is None:
+                print(f"[WARN] deleted-GPS Objekt nicht gefunden (orig_cim={orig_cim}, current_cim={current_cim})")
+                continue
+
+            safe_set(target, "GPSlat", old_lat, verbose=False)
+            safe_set(target, "GPSlon", old_lon, verbose=False)
+
+    finally:
+        _pf_bulk_mode_end(app)
+
+
     _pf_bulk_mode_begin(app)
     try:
         for obj in objects:
-            # restore loc_name
+            # restore loc_name (new -> old)
             cur = _get_loc_name(obj)
             if cur in loc_rev:
                 try:
@@ -572,63 +660,47 @@ def restore_from_mapping(app, mapping_path: Path):
                 except Exception:
                     pass
 
-            # restore cimRdfId
+            # restore cimRdfId (new -> old)
             ids = _get_cim_rdf_id(obj)
             if ids:
                 cur_id = ids[0]
                 if cur_id in cim_rev:
                     _set_cim_rdf_id(obj, cim_rev[cur_id])
+
     finally:
         _pf_bulk_mode_end(app)
 
-    # 2) GPS restore
-    # Strategy:
-    #   - For records with "new": match via ORIGINAL cim id:
-    #       We can find object by looking up current cimRdfId (after step 1, it's original again)
-    #   - For records with "deleted": locate object via stored full_name_after
-    #
-    # Build index:
-    #   cim_id -> obj (after restore step 1 should be original cim)
-    cim_index: Dict[str, object] = {}
-    for obj in objects:
-        ids = _get_cim_rdf_id(obj)
-        if ids:
-            cim_index[ids[0]] = obj
+
+    objects = collect_unique_objects_for_anonymization(app)
+    cim_index_orig = _build_cim_index(objects)  # now should be original cim ids (after restore)
 
     _pf_bulk_mode_begin(app)
     try:
         for orig_cim, rec in gps_map.items():
+            if rec.get("deleted", False):
+                continue  # deleted wurde schon oben behandelt
+
             old = rec.get("old")
             if not (isinstance(old, list) and len(old) == 2):
                 continue
             old_lat, old_lon = float(old[0]), float(old[1])
 
-            if rec.get("deleted", False):
-                # find by full_name_after (that was saved in anonymized project)
+            target = cim_index_orig.get(orig_cim)
+            if target is None:
+                # optional fallback: wenn vorhanden
                 fn = rec.get("full_name_after")
-                if not isinstance(fn, str) or not fn:
-                    continue
-                # Search object by full name: PF has GetCalcRelevantObjects with exact name sometimes tricky.
-                # We'll brute by matching GetFullName.
-                target = None
-                for obj in objects:
-                    if _get_full_name(obj) == fn:
-                        target = obj
-                        break
-                if target is None:
-                    continue
-                safe_set(target, "GPSlat", old_lat, verbose=False)
-                safe_set(target, "GPSlon", old_lon, verbose=False)
-            else:
-                # normal case: find by original cim
-                target = cim_index.get(orig_cim)
-                if target is None:
-                    continue
-                safe_set(target, "GPSlat", old_lat, verbose=False)
-                safe_set(target, "GPSlon", old_lon, verbose=False)
+                if isinstance(fn, str) and fn:
+                    target = _search_by_full_name_after(app, fn)
+
+            if target is None:
+                continue
+
+            safe_set(target, "GPSlat", old_lat, verbose=False)
+            safe_set(target, "GPSlon", old_lon, verbose=False)
 
     finally:
         _pf_bulk_mode_end(app)
+
 
 
 # ----------------------------
