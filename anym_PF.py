@@ -34,11 +34,11 @@ def _seed_unit(seed: str, tag: str) -> float:
 
 def _build_geo_transform(seed: str, max_shift_deg: float = 2.0):
     """
-    Globaler Transform (Rotation+Spiegelung+Shift) – NICHT im JSON gespeichert,
-    nur intern zum Anonymisieren bei gps=False.
+    Global transform (rotation+mirror+shift) – NOT stored in JSON,
+    only used internally for anonymization when gps=False.
     """
     angle = 2.0 * math.pi * _seed_unit(seed, "gps_angle")
-    mirror = 1  # oder: _seed_hash(seed, "gps_mirror") % 2
+    mirror = 1  # or: _seed_hash(seed, "gps_mirror") % 2
 
     dx = (2 * _seed_unit(seed, "gps_dx") - 1) * max_shift_deg
     dy = (2 * _seed_unit(seed, "gps_dy") - 1) * max_shift_deg
@@ -88,7 +88,7 @@ def _call_pf_or_app(app, name: str, *args):
         return getattr(pf, name)(*args)
     if hasattr(app, name):
         return getattr(app, name)(*args)
-    raise AttributeError(f"Weder pf noch app haben: {name}")
+    raise AttributeError(f"Neither pf nor app have: {name}")
 
 
 def _pf_bulk_mode_begin(app):
@@ -128,8 +128,8 @@ class SeededNameAnonymizer:
         self.length = int(length)
 
         # loc_name mapping
-        self.forward: Dict[str, str] = {}   # old -> new
-        self.reverse: Dict[str, str] = {}   # new -> old
+        self.forward: Dict[str, str] = {}  # old -> new
+        self.reverse: Dict[str, str] = {}  # new -> old
 
         # cimRdfId mapping
         self.cim_forward: Dict[str, str] = {}  # old -> new
@@ -137,7 +137,7 @@ class SeededNameAnonymizer:
         # gps mapping keyed by ORIGINAL cimRdfId (before change)
         # value:
         #   {"old":[lat,lon], "new":[lat,lon]} for gps=False
-        #   {"old":[lat,lon], "deleted": True, "full_name_after": "..."} for gps=True
+        #   {"old":[lat,lon], "deleted": True, "cim_after": "...", "full_name_after": "..."} for gps=True
         self.gps_mapping: Dict[str, dict] = {}
 
     def _hash(self, text: str, length: int) -> str:
@@ -190,6 +190,40 @@ def load_mapping_json(path: Path) -> dict:
 # ----------------------------
 # PF object collection
 # ----------------------------
+# ----------------------------
+# PF object collection
+# ----------------------------
+class PfObjects:
+    def __init__(self, app):
+        # Patterns to collect (extend as needed)
+        patterns = [
+            #"*.IntPrjfolder",
+            #"*.IntQlim",
+            "*.Int*",
+            "*.Elm*",
+            "*.Typ*",
+
+            #"*.StaSwitch*",
+            #"*.StaCubic*",
+            "*.Sta*",
+
+            #"*.BlkSig*",
+            #"*.BlkDef*",
+            "*.Blk*",
+        ]
+
+        # Collect everything in one list
+        self.objects = []
+        for pat in patterns:
+            try:
+                self.objects += (app.GetCalcRelevantObjects(pat) or [])
+            except Exception:
+                pass
+
+    def iter_all_lists(self):
+        yield from self.objects
+
+"""
 class PfObjects:
     def __init__(self, app):
         self.intfolder = app.GetCalcRelevantObjects("*.IntPrjfolder") or []
@@ -245,7 +279,7 @@ class PfObjects:
         yield from self.tsym
         yield from self.ttr2
         yield from self.tlod
-
+"""
 
 def parent_chain_until_network_data(obj) -> List:
     chain = []
@@ -314,7 +348,6 @@ def safe_set(obj, attr, value, *, verbose: bool = False) -> bool:
         obj.SetAttribute(attr, value)
         return True
     except TypeError as e:
-        # PF expects list in some attrs
         if isinstance(value, str):
             try:
                 obj.SetAttribute(attr, [value])
@@ -358,26 +391,26 @@ def _get_full_name(obj) -> str:
     try:
         return obj.GetFullName()
     except Exception:
-        # fallback
         return f"{obj.GetClassName()}::{_get_loc_name(obj)}"
+
 
 def _to_project_relative(full_name: str) -> str:
     """
-    Macht aus einem FullName wie:
+    Convert a FullName like:
       \\user\\proj.IntPrj\\Network Model.IntPrjfolder\\...
-    einen Pfad relativ zum Projekt:
+    into a path relative to the project:
       \\Network Model.IntPrjfolder\\...
     """
     marker = r"\Network Model.IntPrjfolder"
     i = full_name.find(marker)
     if i < 0:
-        return full_name  # fallback
+        return full_name
     return full_name[i:]
 
 
 def _search_by_full_name_after(app, full_name_after: str):
     """
-    Sucht ein Objekt über SearchObject() mit relativem Pfad.
+    Locate an object using SearchObject() with a project-relative path.
     """
     project = app.GetActiveProject()
     if not project:
@@ -388,6 +421,8 @@ def _search_by_full_name_after(app, full_name_after: str):
         return project.SearchObject(rel)
     except Exception:
         return None
+
+
 # ----------------------------
 # Anonymize primitives
 # ----------------------------
@@ -448,7 +483,12 @@ def _gps_apply_and_record(
     orig_cim_id: Optional[str],
     orig_loc_name_for_jitter: Optional[str],
 ):
-
+    """
+    Second pass:
+    - gps_delete=True: set to 0/0 and record old GPS + identifiers
+    - gps_delete=False: transform + jitter and record old/new GPS
+    Mapping key is the original cimRdfId (before any change).
+    """
     if orig_cim_id is None:
         return
 
@@ -457,25 +497,28 @@ def _gps_apply_and_record(
     if old_lat is None or old_lon is None:
         return
 
-    # wenn schon 0/0 -> skip
     if abs(old_lat) < 1e-12 and abs(old_lon) < 1e-12:
         return
 
     if gps_delete:
-        # record
+        cur_ids = _get_cim_rdf_id(obj)
+        cim_after = cur_ids[0] if cur_ids else None
+
         anonymizer.gps_mapping.setdefault(
             orig_cim_id,
-            {"old": [float(old_lat), float(old_lon)], "deleted": True, "full_name_after": _get_full_name(obj)},
+            {
+                "old": [float(old_lat), float(old_lon)],
+                "deleted": True,
+                "cim_after": cim_after,
+                "full_name_after": _get_full_name(obj),
+            },
         )
-        # apply
         safe_set(obj, "GPSlat", 0.0, verbose=False)
         safe_set(obj, "GPSlon", 0.0, verbose=False)
         return
 
-    # gps_delete False -> transform + jitter
     new_lat, new_lon = gps_transform(old_lat, old_lon)
 
-    # jitter depends on ORIGINAL loc_name (damit deterministisch bezogen auf Ausgangsdaten)
     base_name = orig_loc_name_for_jitter or _get_loc_name(obj)
     jitter_m = 100.0
 
@@ -503,46 +546,47 @@ def _gps_apply_and_record(
 # ----------------------------
 # Full anonymize procedure
 # ----------------------------
-def anonymize_objects(app, objects: List, seed: str, desc: bool, gps: bool, prefix: str = "ANON_", length: int = 10) -> SeededNameAnonymizer:
+def anonymize_objects(
+    app,
+    objects: List,
+    seed: str,
+    desc: bool,
+    gps: bool,
+    prefix: str = "ANON_",
+    length: int = 10,
+) -> SeededNameAnonymizer:
     """
-    gps parameter meaning (wie bei dir):
-      gps=True  -> GPS löschen (0/0)
-      gps=False -> GPS transformieren + jitter
-    GPS passiert im 2. Durchlauf (nach loc_name/cimRdfId Änderungen).
+    gps parameter meaning:
+      gps=True  -> delete GPS (0/0)
+      gps=False -> transform + jitter
+    GPS runs in a second pass (after loc_name / cimRdfId changes).
     """
     anonymizer = SeededNameAnonymizer(seed=seed, prefix=prefix, length=length)
     gps_transform = _build_geo_transform(seed, max_shift_deg=2.0)
 
-    # --- 1st pass: IDs + names ---
-    # Wir speichern pro Objekt die ORIGINAL keys, um sie im 2. Pass fürs Mapping zu nutzen.
-    # key: python object id -> (orig_cim_id, orig_loc_name)
+    # Store original keys for the second pass:
+    # python object id -> (orig_cim_id, orig_loc_name)
     orig_keys: Dict[int, Tuple[Optional[str], Optional[str]]] = {}
 
     _pf_bulk_mode_begin(app)
     try:
         for obj in objects:
-            # remember originals BEFORE changing
             ids = _get_cim_rdf_id(obj)
             orig_cim = ids[0] if ids else None
             orig_loc = _get_loc_name(obj)
             orig_keys[id(obj)] = (orig_cim, orig_loc)
 
-            # ensure CIM mapping + apply
-            # anonymize_cim_rdf_id(obj, seed, anonymizer)
+            anonymize_cim_rdf_id(obj, seed, anonymizer)
 
-            # sanitize desc (optional) - cheap
             _sanitize_desc(obj, desc)
 
-            # rename loc_name
             if isinstance(orig_loc, str) and orig_loc.strip():
                 new_name = anonymizer.translate(orig_loc)
                 if new_name != orig_loc:
                     _make_unique_if_needed(obj, new_name, anonymizer)
-
     finally:
         _pf_bulk_mode_end(app)
 
-    # --- 2nd pass: GPS (needs final full names) ---
     _pf_bulk_mode_begin(app)
     try:
         for obj in objects:
@@ -567,20 +611,19 @@ def anonymize_objects(app, objects: List, seed: str, desc: bool, gps: bool, pref
 # ----------------------------
 def restore_from_mapping(app, mapping_path: Path):
     """
-    Restore in einem bereits importierten Projekt anhand der Mapping-JSON:
-    - GPS wiederherstellen (deleted=true zuerst, solange die anonymen FullNames noch gültig wären)
-      -> bevorzugt via CIM-Mapping (robust), optional Fallback via SearchObject
-    - loc_name zurück
-    - cimRdfId zurück
-    - GPS wiederherstellen (für "new"-Fälle; nach cim-restore am stabilsten über orig cim)
+    Restore inside an already imported project using the mapping JSON:
+    - Restore GPS first for deleted=true (while anonymized identifiers are still available)
+      -> prefer cim_after, then cim mapping, then SearchObject fallback
+    - Restore loc_name
+    - Restore cimRdfId
+    - Restore GPS for transformed cases using original cimRdfId (after cim restore)
     """
     data = load_mapping_json(mapping_path)
 
-    loc_map: Dict[str, str] = data.get("loc_name_mapping", {}) or {}    # old -> new
-    cim_map: Dict[str, str] = data.get("cimRdfId_mapping", {}) or {}    # old -> new
-    gps_map: Dict[str, dict] = data.get("gps_mapping", {}) or {}        # key = orig cim (old)
+    loc_map: Dict[str, str] = data.get("loc_name_mapping", {}) or {}  # old -> new
+    cim_map: Dict[str, str] = data.get("cimRdfId_mapping", {}) or {}  # old -> new
+    gps_map: Dict[str, dict] = data.get("gps_mapping", {}) or {}      # key = original cim (old)
 
-    # reverse maps
     loc_rev = {v: k for k, v in loc_map.items()}  # new -> old
     cim_rev = {v: k for k, v in cim_map.items()}  # new -> old
 
@@ -593,27 +636,6 @@ def restore_from_mapping(app, mapping_path: Path):
             if ids:
                 idx[ids[0]] = o
         return idx
-
-    def _search_by_full_name_after(app, full_name_after: str):
-
-        try:
-            prj = app.GetActiveProject()
-            if not prj:
-                return None
-        except Exception:
-            return None
-
-        s = str(full_name_after)
-
-        marker = ".IntPrj\\"
-        if marker in s:
-            s = "\\" + s.split(marker, 1)[1]
-
-        try:
-            return prj.SearchObject(s)
-        except Exception:
-            return None
-
 
     cim_index_current = _build_cim_index(objects)
 
@@ -628,10 +650,16 @@ def restore_from_mapping(app, mapping_path: Path):
                 continue
             old_lat, old_lon = float(old[0]), float(old[1])
 
-            # bevorzugt: über CIM finden
-            current_cim = cim_map.get(orig_cim, orig_cim)
-            target = cim_index_current.get(current_cim)
+            target = None
 
+            cim_after = rec.get("cim_after")
+            if isinstance(cim_after, str) and cim_after:
+                target = cim_index_current.get(cim_after)
+
+            if target is None:
+                current_cim = cim_map.get(orig_cim)
+                if isinstance(current_cim, str) and current_cim:
+                    target = cim_index_current.get(current_cim)
 
             if target is None:
                 fn = rec.get("full_name_after")
@@ -639,20 +667,17 @@ def restore_from_mapping(app, mapping_path: Path):
                     target = _search_by_full_name_after(app, fn)
 
             if target is None:
-                print(f"[WARN] deleted-GPS Objekt nicht gefunden (orig_cim={orig_cim}, current_cim={current_cim})")
+                print(f"[WARN] deleted-GPS target not found (orig_cim={orig_cim})")
                 continue
 
             safe_set(target, "GPSlat", old_lat, verbose=False)
             safe_set(target, "GPSlon", old_lon, verbose=False)
-
     finally:
         _pf_bulk_mode_end(app)
-
 
     _pf_bulk_mode_begin(app)
     try:
         for obj in objects:
-            # restore loc_name (new -> old)
             cur = _get_loc_name(obj)
             if cur in loc_rev:
                 try:
@@ -660,25 +685,22 @@ def restore_from_mapping(app, mapping_path: Path):
                 except Exception:
                     pass
 
-            # restore cimRdfId (new -> old)
             ids = _get_cim_rdf_id(obj)
             if ids:
                 cur_id = ids[0]
                 if cur_id in cim_rev:
                     _set_cim_rdf_id(obj, cim_rev[cur_id])
-
     finally:
         _pf_bulk_mode_end(app)
 
-
     objects = collect_unique_objects_for_anonymization(app)
-    cim_index_orig = _build_cim_index(objects)  # now should be original cim ids (after restore)
+    cim_index_orig = _build_cim_index(objects)
 
     _pf_bulk_mode_begin(app)
     try:
         for orig_cim, rec in gps_map.items():
             if rec.get("deleted", False):
-                continue  # deleted wurde schon oben behandelt
+                continue
 
             old = rec.get("old")
             if not (isinstance(old, list) and len(old) == 2):
@@ -687,7 +709,6 @@ def restore_from_mapping(app, mapping_path: Path):
 
             target = cim_index_orig.get(orig_cim)
             if target is None:
-                # optional fallback: wenn vorhanden
                 fn = rec.get("full_name_after")
                 if isinstance(fn, str) and fn:
                     target = _search_by_full_name_after(app, fn)
@@ -697,10 +718,8 @@ def restore_from_mapping(app, mapping_path: Path):
 
             safe_set(target, "GPSlat", old_lat, verbose=False)
             safe_set(target, "GPSlon", old_lon, verbose=False)
-
     finally:
         _pf_bulk_mode_end(app)
-
 
 
 # ----------------------------
@@ -745,20 +764,19 @@ def _import_pfd_into_current_user(app, in_path: Path):
     _call_pf_or_app(app, "WriteChangesToDb")
 
     if rc != 0:
-        raise RuntimeError(f"PFD Import fehlgeschlagen. Returncode: {rc}")
+        raise RuntimeError(f"PFD import failed. Return code: {rc}")
 
 
 def _activate_project(app, project_name: str):
-
     rc = app.ActivateProject(project_name)
     if rc == 0:
         return app.GetActiveProject()
 
     if project_name.endswith("_anonym"):
-        alt_name = project_name[:-8]  # remove "_anonym"
+        alt_name = project_name[:-7]  # remove "_anonym"
         rc2 = app.ActivateProject(alt_name)
         if rc2 == 0:
-            print(f"[INFO] Projektname korrigiert auf: {alt_name}")
+            print(f"[INFO] Project name corrected to: {alt_name}")
             return app.GetActiveProject()
 
     user = app.GetCurrentUser()
@@ -770,16 +788,14 @@ def _activate_project(app, project_name: str):
                 p.Activate()
                 return app.GetActiveProject()
 
-    # Debug-Ausgabe
-    print("Verfügbare Projekte:")
+    print("Available projects:")
     for p in prjs:
         try:
             print(" -", p.loc_name)
         except Exception:
             pass
 
-    raise RuntimeError(f"Konnte Projekt nicht aktivieren: {project_name} (rc={rc})")
-
+    raise RuntimeError(f"Could not activate project: {project_name} (rc={rc})")
 
 
 def _export_project_to_pfd(app, out_path: Path):
@@ -789,7 +805,7 @@ def _export_project_to_pfd(app, out_path: Path):
 
     pfd_export_obj = app.GetFromStudyCase("ComPfdexport")
     if not pfd_export_obj:
-        raise RuntimeError("ComPfdexport nicht gefunden (StudyCase).")
+        raise RuntimeError("ComPfdexport not found (StudyCase).")
 
     pfd_export_obj.g_objects = [g_object]
     pfd_export_obj.g_file = _p(out_path)
@@ -816,7 +832,7 @@ def kill_powerfactory():
         try:
             if proc.info.get("name") and "PowerFactory" in proc.info["name"]:
                 proc.kill()
-                print("PowerFactory erfolgreich beendet.")
+                print("PowerFactory terminated.")
                 return
         except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
             pass
@@ -836,8 +852,8 @@ def run_powerfactory_import_export(
     hash_length: int = 10,
 ):
     """
-    gps=True  -> GPS löschen (0,0) + JSON speichert old + full_name_after
-    gps=False -> GPS transform+jitter + JSON speichert old/new
+    gps=True  -> delete GPS (0/0) + JSON stores old + cim_after + full_name_after
+    gps=False -> transform+jitter + JSON stores old/new
     """
     in_path = Path(in_path)
     out_path = Path(out_path)
@@ -847,13 +863,13 @@ def run_powerfactory_import_export(
 
     app = pf.GetApplication()
     if not app:
-        raise RuntimeError("PowerFactory Application nicht verfügbar (pf.GetApplication() gab None zurück).")
+        raise RuntimeError("PowerFactory Application not available (pf.GetApplication() returned None).")
 
     app.ClearOutputWindow()
-    print("=== anym_app.py: Start Import/Anonymize/Export ===")
+    print("=== anym_PF.py: Start Import/Anonymize/Export ===")
 
     if not in_path.exists():
-        raise FileNotFoundError(f"Input-PFD nicht gefunden: {in_path}")
+        raise FileNotFoundError(f"Input PFD not found: {in_path}")
 
     project_name = in_path.stem
 
@@ -861,13 +877,12 @@ def run_powerfactory_import_export(
     _import_pfd_into_current_user(app, in_path)
     _activate_project(app, project_name)
 
-    # ensure CIM ids exist
     gridtocim = app.GetFromStudyCase("ComGridtocim")
     if gridtocim:
         gridtocim.AssignCimRdfIds()
 
     objects = collect_unique_objects_for_anonymization(app)
-    print(f"Zu anonymisierende Objekte (unique): {len(objects)}")
+    print(f"Objects to anonymize (unique): {len(objects)}")
 
     anonymizer = anonymize_objects(
         app=app,
@@ -880,16 +895,16 @@ def run_powerfactory_import_export(
     )
 
     save_mapping_json(mapping_out_path, anonymizer)
-    print(f"Mapping gespeichert: {mapping_out_path}")
+    print(f"Mapping saved: {mapping_out_path}")
 
     try:
         out_path.parent.mkdir(parents=True, exist_ok=True)
         _export_project_to_pfd(app, out_path)
-        print(f"Export geschrieben: {out_path}")
+        print(f"Export written: {out_path}")
     except Exception as e:
-        print(f"[WARN] Export nicht durchgeführt: {e}")
+        print(f"[WARN] Export not executed: {e}")
 
-    print("=== anym_app.py: Fertig ===")
+    print("=== anym_PF.py: Done ===")
 
 
 def run_powerfactory_restore(
@@ -908,7 +923,7 @@ def run_powerfactory_restore(
 
     app = pf.GetApplication()
     if not app:
-        raise RuntimeError("PowerFactory Application nicht verfügbar.")
+        raise RuntimeError("PowerFactory Application not available.")
 
     if not in_path.exists():
         raise FileNotFoundError(in_path)
