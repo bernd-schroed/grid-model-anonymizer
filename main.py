@@ -2,6 +2,7 @@ import argparse
 import time
 from pathlib import Path
 
+
 from anym_PF import run_powerfactory_import_export
 
 
@@ -35,7 +36,8 @@ def parse_args():
     parser.add_argument(
         "--gps",
         help="Wenn gesetzt, wird GPS gelöscht",
-        default=True,
+        #default=True,
+        default=False,
     )
 
     parser.add_argument(
@@ -73,11 +75,12 @@ def parse_args():
         args.seed,
         args.output_file_dct,
         args.desc,
+        args.gps,
     )
 
 
 def main():
-    input_file, output_file, seed, output_file_dct, desc = parse_args()
+    input_file, output_file, seed, output_file_dct, desc, gps = parse_args()
 
     if input_file.suffix.lower() == ".pfd":
         run_powerfactory_import_export(
@@ -86,6 +89,7 @@ def main():
             random_seed=seed,
             mapping_out_path=output_file_dct,
             desc=desc,
+            gps = gps
         )
     else:
         print("File not supported")

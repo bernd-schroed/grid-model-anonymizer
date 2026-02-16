@@ -7,6 +7,8 @@ import sys
 import json
 import hashlib
 from typing import Dict, List
+import math
+import psutil
 
 # PowerFactory Python path
 sys.path.append(r"C:\Program Files\DIgSILENT\PowerFactory 2024 SP7\Python\3.9")
@@ -18,6 +20,50 @@ def _p(p: Path) -> str:
     return os.fspath(Path(p).resolve())
 
 
+def _seed_hash(seed: str, tag: str) -> int:
+    h = hashlib.sha256((str(seed) + "|" + tag).encode("utf-8")).hexdigest()
+    return int(h[:16], 16)  # 64-bit aus dem Hash
+
+def _seed_unit(seed: str, tag: str) -> float:
+    # deterministisch 0..1
+    x = _seed_hash(seed, tag)
+    return (x % 10_000_000) / 10_000_000.0
+
+def _build_geo_transform(seed: str, max_shift_deg: float = 2.0):
+    """
+    max_shift_deg: max. Verschiebung in 'Grad' (PF GPSlat/GPSlon sind typischerweise Grad).
+    2.0° ~ 222km in Latitude. Passe das an deine Modelle an.
+    """
+    angle = 2.0 * math.pi * _seed_unit(seed, "gps_angle")  # 0..2pi
+    mirror = 1 # _seed_hash(seed, "gps_mirror") % 2            # 0/1
+
+    # shift in Grad (uniform in [-max_shift_deg, +max_shift_deg])
+    dx = (2 * _seed_unit(seed, "gps_dx") - 1) * max_shift_deg
+    dy = (2 * _seed_unit(seed, "gps_dy") - 1) * max_shift_deg
+
+    c = math.cos(angle)
+    s = math.sin(angle)
+
+    def transform(lat: float, lon: float) -> tuple[float, float]:
+        # Wir behandeln (lon, lat) als (x, y) in einem flachen Koordinatensystem.
+        x = float(lon)
+        y = float(lat)
+
+        # Spiegelung an y-Achse (x -> -x) oder keine
+        if mirror == 1:
+            x = -x
+
+        # Rotation um Ursprung
+        xr = c * x - s * y
+        yr = s * x + c * y
+
+        # Translation
+        xr += dx
+        yr += dy
+
+        return float(yr), float(xr)
+
+    return transform, {"angle_deg": angle * 180.0 / math.pi, "mirror": mirror, "dx": dx, "dy": dy}
 # ----------------------------
 # Helpers: PF call wrappers
 # ----------------------------
@@ -112,7 +158,7 @@ class SeededNameAnonymizer:
         return new_name
 
 
-def save_mapping_json(path: Path, anonymizer: SeededNameAnonymizer):
+def save_mapping_json(path: Path, anonymizer: SeededNameAnonymizer, geo_info=None):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -122,8 +168,11 @@ def save_mapping_json(path: Path, anonymizer: SeededNameAnonymizer):
         "length": anonymizer.length,
         "loc_name_mapping": anonymizer.forward,
         "cimRdfId_mapping": anonymizer.cim_forward,
+        "gps_transform": geo_info,   # <-- neu
     }
+
     path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+
 
 
 # ----------------------------
@@ -227,6 +276,20 @@ def collect_unique_objects_for_anonymization(app) -> List:
 # ----------------------------
 # Safe attribute helpers
 # ----------------------------
+def _get_float_attr(obj, attr: str):
+    if not obj.HasAttribute(attr):
+        return None
+    try:
+        v = obj.GetAttribute(attr)
+        if v is None:
+            return None
+        return float(v)
+    except Exception:
+        try:
+            return float(getattr(obj, attr))
+        except Exception:
+            return None
+
 def safe_set(obj, attr, value, *, verbose: bool = False) -> bool:
     """
     Robust setter:
@@ -285,20 +348,35 @@ def _set_cim_rdf_id(obj, new_id: str) -> bool:
     return safe_set(obj, "cimRdfId", [new_id], verbose=False)
 
 
-def _sanitize_metadata(obj, desc, gps):
-    # only set if attribute exists
+def _sanitize_metadata(obj, desc: bool, gps: bool, *, seed: str, gps_transform):
+    # desc
     if desc:
         safe_set(obj, "desc", "Deleted", verbose=False)
     else:
-        print("desc, todo")
+        safe_set(obj, "desc", "ToDo -> yet not supported", verbose=False)
+        print("desc adaption todo")
 
+    # GPS
     if gps:
+        # löschen
         safe_set(obj, "GPSlat", 0, verbose=False)
         safe_set(obj, "GPSlon", 0, verbose=False)
     else:
+        # transformieren (nur wenn Attribute vorhanden UND sinnvolle Werte)
+        lat = _get_float_attr(obj, "GPSlat")
+        lon = _get_float_attr(obj, "GPSlon")
 
+        if lat is None or lon is None:
+            return
 
-        print("GPS, todo")
+        # wenn 0/0 schon gesetzt oder leer, überspringen (optional)
+        # (das verhindert, dass "leere" GPS plötzlich irgendwohin springen)
+        if abs(lat) < 1e-12 and abs(lon) < 1e-12:
+            return
+
+        new_lat, new_lon = gps_transform(lat, lon)
+        safe_set(obj, "GPSlat", new_lat, verbose=False)
+        safe_set(obj, "GPSlon", new_lon, verbose=False)
 
 
 def anonymize_cim_rdf_id(obj, seed: str, anonymizer: SeededNameAnonymizer) -> bool:
@@ -318,13 +396,12 @@ def anonymize_cim_rdf_id(obj, seed: str, anonymizer: SeededNameAnonymizer) -> bo
     return _set_cim_rdf_id(obj, new_id)
 
 
-def _set_loc_name(obj, desc,gps, new_name: str):
-    # sanitize first (optional, but you wanted it)
-    _sanitize_metadata(obj, desc, gps)
+def _set_loc_name(obj, desc: bool, gps: bool, new_name: str, *, seed: str, gps_transform):
+    _sanitize_metadata(obj, desc, gps, seed=seed, gps_transform=gps_transform)
     obj.SetAttribute("loc_name", new_name)
 
 
-def _make_unique_if_needed(obj, desc, gps, desired: str, anonymizer: SeededNameAnonymizer) -> str:
+def _make_unique_if_needed(obj, desc: bool, gps: bool, desired: str, anonymizer: SeededNameAnonymizer, *, seed: str, gps_transform) -> str:
     """
     Setzt loc_name. Wenn PF es nicht akzeptiert, deterministischen Suffix.
     """
@@ -332,7 +409,7 @@ def _make_unique_if_needed(obj, desc, gps, desired: str, anonymizer: SeededNameA
 
     # attempt 1
     try:
-        _set_loc_name(obj, desc, gps, desired)
+        _set_loc_name(obj, desc, gps, desired, seed=seed, gps_transform=gps_transform)
         after = _get_loc_name(obj)
         if after == desired:
             return desired
@@ -346,7 +423,7 @@ def _make_unique_if_needed(obj, desc, gps, desired: str, anonymizer: SeededNameA
         suffix = anonymizer._hash(base, 6)
         candidate = f"{desired}_{suffix}"
 
-        _set_loc_name(obj, desc, gps, candidate)
+        _set_loc_name(obj, desc, gps, candidate, seed=seed, gps_transform=gps_transform)
         after2 = _get_loc_name(obj)
         if after2 != candidate:
             raise RuntimeError(f"Rename failed: {old} -> {desired} (candidate {candidate} not applied)")
@@ -355,7 +432,7 @@ def _make_unique_if_needed(obj, desc, gps, desired: str, anonymizer: SeededNameA
 
 def anonymize_objects(app, objects: List, seed: str, desc: bool, gps:bool, prefix: str = "ANON_", length: int = 10) -> SeededNameAnonymizer:
     anonymizer = SeededNameAnonymizer(seed=seed, prefix=prefix, length=length)
-
+    gps_transform, geo_info = _build_geo_transform(seed, max_shift_deg=2.0)
     _pf_bulk_mode_begin(app)
     try:
         for obj in objects:
@@ -369,12 +446,13 @@ def anonymize_objects(app, objects: List, seed: str, desc: bool, gps:bool, prefi
 
             new = anonymizer.translate(old)
             if new != old:
-                _make_unique_if_needed(obj, desc, gps, new, anonymizer)
+                _make_unique_if_needed(obj, desc, gps, new, anonymizer, seed=seed, gps_transform=gps_transform)
+
 
     finally:
         _pf_bulk_mode_end(app)
 
-    return anonymizer
+    return anonymizer, geo_info
 
 
 # ----------------------------
@@ -485,6 +563,17 @@ def _export_project_to_pfd(app, out_path: Path):
     app.ClearRecycleBin()
 
 
+def kill_powerfactory():
+    # Gehe durch alle Prozesse und prüfe, ob PowerFactory läuft
+    for proc in psutil.process_iter(attrs=['pid', 'name']):
+        try:
+            # Prüfe, ob der Prozessname 'PowerFactory.exe' ist
+            if "PowerFactory" in proc.info['name']:
+                proc.kill()  # Beende den Prozess
+                print("PowerFactory erfolgreich beendet.")
+                return
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+            pass
 # ----------------------------
 # MAIN ENTRY
 # ----------------------------
@@ -493,15 +582,15 @@ def run_powerfactory_import_export(
     out_path: Path,
     random_seed: str,
     mapping_out_path: Path,
-    desc: bool = True,
-    gps: bool = True,
+    desc: bool,
+    gps: bool,
     prefix: str = "ANON_",
     hash_length: int = 10,
 ):
     in_path = Path(in_path)
     out_path = Path(out_path)
     mapping_out_path = Path(mapping_out_path)
-
+    kill_powerfactory()
     app = pf.GetApplication()
     if not app:
         raise RuntimeError("PowerFactory Application nicht verfügbar (pf.GetApplication() gab None zurück).")
@@ -532,7 +621,7 @@ def run_powerfactory_import_export(
     objects = collect_unique_objects_for_anonymization(app)
     print(f"Zu anonymisierende Objekte (unique): {len(objects)}")
 
-    anonymizer = anonymize_objects(
+    anonymizer, geo_info = anonymize_objects(
         app=app,
         objects=objects,
         seed=random_seed,
@@ -543,7 +632,11 @@ def run_powerfactory_import_export(
     )
 
     # save mappings (loc_name + cimRdfId)
-    save_mapping_json(mapping_out_path, anonymizer)
+    if gps == True:
+        geo_info = ["not changed"]
+
+
+    save_mapping_json(mapping_out_path, anonymizer, geo_info)
     print(f"Mapping gespeichert: {mapping_out_path}")
 
     # export
