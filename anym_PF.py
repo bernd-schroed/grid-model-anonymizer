@@ -197,19 +197,14 @@ class PfObjects:
     def __init__(self, app):
         # Patterns to collect (extend as needed)
         patterns = [
-            #"*.IntPrjfolder",
-            #"*.IntQlim",
-            "*.Int*",
+            "*.IntPrjfolder",
+            "*.IntQlim",
             "*.Elm*",
             "*.Typ*",
-
-            #"*.StaSwitch*",
-            #"*.StaCubic*",
-            "*.Sta*",
-
-            #"*.BlkSig*",
-            #"*.BlkDef*",
-            "*.Blk*",
+            "*.StaSwitch*",
+            "*.StaCubic*",
+            "*.BlkSig*",
+            "*.BlkDef*",
         ]
 
         # Collect everything in one list
@@ -460,6 +455,7 @@ def _make_unique_if_needed(obj, desired: str, anonymizer: SeededNameAnonymizer) 
         suffix = anonymizer._hash(base, 6)
         candidate = f"{desired}_{suffix}"
         _set_loc_name_only(obj, candidate)
+        print(obj)
         if _get_loc_name(obj) != candidate:
             raise RuntimeError(f"Rename failed: {old} -> {desired} (candidate {candidate} not applied)")
         return candidate
