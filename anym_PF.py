@@ -229,6 +229,7 @@ class PfObjects:
             "*.Typ*",
             "*.StaSwitch",
             "*.StaCubic",
+            "*.IntGrf",
         ]
 
         self.objects = []
@@ -245,6 +246,17 @@ class PfObjects:
                 cimModel.Delete()
             except Exception:
                 pass
+
+        mapsinfos = project.GetContents("*.IntGrf", 1)
+
+        for map in mapsinfos:
+            try:
+                #map.Delete()
+                map.loc_name = "Deleted"
+            except Exception:
+                pass
+
+
 
     def iter_all_lists(self):
         yield from self.objects
@@ -580,11 +592,9 @@ def _desc_anonymize(desc_value: str, anonymizer: "SeededNameAnonymizer") -> str:
             out_parts.append(anonymizer.translate(tok))
 
     out = _desc_normalize("".join(out_parts)).strip()
-
-    # <<< Force delimiter to semicolon >>>
-    out = " ".join(out.split())          # normalize spaces
-    out = out.replace(" ", ";")          # spaces -> semicolons
-    out = out.replace(";;", ";")         # optional collapse
+    out = out.replace(" ", ";")
+    while ";;" in out:
+        out = out.replace(";;", ";")
     out = out.strip(";")
 
     return out
@@ -609,7 +619,9 @@ def _desc_restore(desc_value: str, anon_rev: Dict[str, str], prefix: str) -> str
             else:
                 out_parts.append(tok)
 
-    return _desc_normalize("".join(out_parts)).strip()
+    out = _desc_normalize("".join(out_parts)).strip()
+    out = _collapse_semicolons(out)
+    return out
 
 
 # ----------------------------
@@ -719,11 +731,6 @@ def anonymize_objects(
             if full.endswith(".IntPrj") or full.endswith(".IntUser"):
                 continue
 
-            if full.endswith(".CimArchive") or full.endswith(".CimModel"):
-                print(obj.GetFullName())
-                obj.Delete()
-                continue
-
             ids = _get_cim_rdf_id(obj)
             orig_cim = ids[0] if ids else None
             orig_loc = _get_loc_name(obj)
@@ -797,6 +804,13 @@ def _build_cim_index(objs: List) -> Dict[str, object]:
 import re
 
 _ANON_RE = re.compile(r"\bANON_[0-9A-F]{6,}\b")  # 6+ damit auch längere Hashes gehen
+
+import re
+
+def _collapse_semicolons(s: str) -> str:
+    s = re.sub(r";{2,}", ";", s)   # ;; oder mehr -> ;
+    s = s.strip(";")
+    return s
 
 def restore_anon_tokens_in_text(text: str, anon_rev: Dict[str, str]) -> str:
     def repl(m: re.Match) -> str:
