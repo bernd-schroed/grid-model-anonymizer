@@ -542,15 +542,143 @@ def _make_unique_if_needed(obj, desired: str, anonymizer: SeededNameAnonymizer) 
             print(f"Rename failed: {old} -> {desired} (candidate {candidate} not applied)")
         return candidate
 
+# ----------------------------
+# DESC handling
+# ----------------------------
 
-def _sanitize_desc(obj, desc: bool):
+def _sanitize_desc(obj, desc: bool, anonymizer: SeededNameAnonymizer):
+    """
+    desc=True  -> delete description (write 'Deleted')
+    desc=False -> anonymize description (token-based, reversible)
+    """
     if desc:
         safe_set(obj, "desc", "Deleted", verbose=False)
-    else:
-        safe_set(obj, "desc", "todo", verbose=False)
+        return
+
+    old = _get_str_attr(obj, "desc")
+    if old is None:
+        return
+
+    old_s = str(old)
+    if old_s.strip() == "":
+        return
+
+    new_s = _desc_anonymize(old_s, anonymizer)
+    if new_s != old_s:
+        safe_set(obj, "desc", new_s, verbose=False)
+
+
+def _desc_normalize(s: str) -> str:
+    """
+    Normalize desc text:
+    - remove parentheses characters '(' and ')'
+    - collapse any whitespace runs into a single space
+    - keep semicolons as-is
+    """
+    if s is None:
+        return ""
+
+    t = str(s).replace("(", "").replace(")", "")
+
+    out = []
+    prev_space = False
+    for ch in t:
+        if ch.isspace():
+            if not prev_space:
+                out.append(" ")
+            prev_space = True
+        else:
+            out.append(ch)
+            prev_space = False
+
+    return "".join(out)
+
+
+def _desc_tokenize_keep_delims(s: str) -> List[Tuple[str, bool]]:
+    """
+    Tokenize desc into a sequence of (text, is_delim):
+    - delimiters are ';' and single spaces
+    - tokens are non-empty runs of non-delimiter chars
+    This preserves structure for reconstruction.
+    """
+    s = _desc_normalize(s)
+
+    items: List[Tuple[str, bool]] = []
+    buf: List[str] = []
+
+    def flush_token():
+        nonlocal buf
+        if buf:
+            tok = "".join(buf)
+            if tok != "":
+                items.append((tok, False))
+            buf = []
+
+    for ch in s:
+        if ch == ";":
+            flush_token()
+            items.append((";", True))
+        elif ch == " ":
+            flush_token()
+            items.append((" ", True))
+        else:
+            buf.append(ch)
+
+    flush_token()
+
+    while items and items[0] == (" ", True):
+        items.pop(0)
+    while items and items[-1] == (" ", True):
+        items.pop()
+
+    return items
+
+
+def _desc_anonymize(desc_value: str, anonymizer: "SeededNameAnonymizer") -> str:
+    """
+    Anonymize desc by anonymizing each token and keeping delimiters.
+    Tokens are separated by ';' or whitespace.
+    """
+    seq = _desc_tokenize_keep_delims(desc_value)
+    if not seq:
+        return desc_value if desc_value is not None else ""
+
+    out_parts: List[str] = []
+    for text, is_delim in seq:
+        if is_delim:
+            out_parts.append(text)
+        else:
+            tok = text.strip()
+            if tok == "":
+                continue
+            out_parts.append(anonymizer.translate_attr("desc_token", tok))
+
+    return _desc_normalize("".join(out_parts)).strip()
+
+
+def _desc_restore(desc_value: str, attr_rev: Dict[str, Dict[str, str]]) -> str:
+    """
+    Reverse _desc_anonymize using attr_rev["desc_token"].
+    """
+    revmap = attr_rev.get("desc_token", {})
+    seq = _desc_tokenize_keep_delims(desc_value)
+    if not seq:
+        return desc_value if desc_value is not None else ""
+
+    out_parts: List[str] = []
+    for text, is_delim in seq:
+        if is_delim:
+            out_parts.append(text)
+        else:
+            tok = text.strip()
+            if tok == "":
+                continue
+            out_parts.append(revmap.get(tok, tok))
+
+    return _desc_normalize("".join(out_parts)).strip()
 
 # ----------------------------
-# GPS handling (2nd pass)
+# GPS handling
 # ----------------------------
 def _gps_apply_and_record(
     obj,
@@ -651,7 +779,9 @@ def anonymize_objects(
     try:
         for obj in objects:
             full = obj.GetFullName()
-            if full.endswith(".IntPrj") or full.endswith(".IntUser") or full == "" or full is None:
+            if not full:
+                continue
+            if full.endswith(".IntPrj") or full.endswith(".IntUser"):
                 continue
 
             if full.endswith(".CimArchive") or full.endswith(".CimModel"):
@@ -673,7 +803,7 @@ def anonymize_objects(
 
             #anonymize_cim_rdf_id(obj, seed, anonymizer)
 
-            _sanitize_desc(obj, desc)
+            _sanitize_desc(obj, desc, anonymizer)
 
             # loc_name
             if isinstance(orig_loc, str) and orig_loc.strip():
@@ -715,6 +845,13 @@ def anonymize_objects(
     return anonymizer
 
 
+def _build_cim_index(objs: List) -> Dict[str, object]:
+    idx: Dict[str, object] = {}
+    for o in objs:
+        ids = _get_cim_rdf_id(o)
+        if ids:
+            idx[ids[0]] = o
+    return idx
 # ----------------------------
 # Restore procedure
 # ----------------------------
@@ -724,33 +861,27 @@ def restore_from_mapping(app, mapping_path: Path):
     - Restore GPS first for deleted=true (while anonymized identifiers are still available)
       -> prefer cim_after, then cim mapping, then SearchObject fallback
     - Restore loc_name
+    - Restore string attributes (sernum/constr/for_name/...) using attr_mappings
+    - Restore desc (only if it was anonymized; if it was set to 'Deleted' it is intentionally irreversible)
     - Restore cimRdfId
     - Restore GPS for transformed cases using original cimRdfId (after cim restore)
     """
     data = load_mapping_json(mapping_path)
 
-    loc_map: Dict[str, str] = data.get("loc_name_mapping", {}) or {}  # old -> new
-    attr_maps: Dict[str, Dict[str, str]] = data.get("attr_mappings", {}) or {}
-    cim_map: Dict[str, str] = data.get("cimRdfId_mapping", {}) or {}  # old -> new
-    gps_map: Dict[str, dict] = data.get("gps_mapping", {}) or {}      # key = original cim (old)
+    loc_map: Dict[str, str] = data.get("loc_name_mapping", {}) or {}          # old -> new
+    attr_maps = data.get("attr_mappings", {}) or {}                           # attr -> (old -> new)
+    cim_map: Dict[str, str] = data.get("cimRdfId_mapping", {}) or {}          # old -> new
+    gps_map: Dict[str, dict] = data.get("gps_mapping", {}) or {}              # key = original cim (old)
 
-    loc_rev = {v: k for k, v in loc_map.items()}  # new -> old
-    attr_rev: Dict[str, Dict[str, str]] = {
-        attr: {new: old for old, new in mp.items()}
-        for attr, mp in attr_maps.items()
-    }
-    cim_rev = {v: k for k, v in cim_map.items()}  # new -> old
+    loc_rev = {v: k for k, v in loc_map.items()}                              # new -> old
+    attr_rev = {attr: {new: old for old, new in mp.items()} for attr, mp in attr_maps.items()}
+    cim_rev = {v: k for k, v in cim_map.items()}                              # new -> old
 
     objects = collect_unique_objects_for_anonymization(app)
 
-    def _build_cim_index(objs: List) -> Dict[str, object]:
-        idx: Dict[str, object] = {}
-        for o in objs:
-            ids = _get_cim_rdf_id(o)
-            if ids:
-                idx[ids[0]] = o
-        return idx
-
+    # ---------------------------------------------------------
+    # 1) Restore GPS for deleted=true BEFORE renaming anything
+    # ---------------------------------------------------------
     cim_index_current = _build_cim_index(objects)
 
     _pf_bulk_mode_begin(app)
@@ -789,26 +920,39 @@ def restore_from_mapping(app, mapping_path: Path):
     finally:
         _pf_bulk_mode_end(app)
 
+    # ---------------------------------------------------------
+    # 2) Restore loc_name, attributes, desc, cimRdfId
+    # ---------------------------------------------------------
     _pf_bulk_mode_begin(app)
     try:
         for obj in objects:
             # restore loc_name
-            cur = _get_loc_name(obj)
-            if cur in loc_rev:
+            cur_name = _get_loc_name(obj)
+            if cur_name in loc_rev:
                 try:
-                    obj.SetAttribute("loc_name", loc_rev[cur])
+                    obj.SetAttribute("loc_name", loc_rev[cur_name])
                 except Exception:
                     pass
 
-
-            # restore for_name and co
+            # restore generic string attributes (skip desc_token - it's not a real PF attribute)
             for attr, revmap in attr_rev.items():
+                if attr == "desc_token":
+                    continue
                 cur_val = _get_str_attr(obj, attr)
                 if cur_val is None:
                     continue
                 cur_s = str(cur_val).strip()
                 if cur_s in revmap:
                     _set_str_attr(obj, attr, revmap[cur_s])
+
+            # restore desc (only if it was anonymized; "Deleted" stays as-is)
+            cur_desc = _get_str_attr(obj, "desc")
+            if cur_desc is not None:
+                cur_desc_s = str(cur_desc)
+                if cur_desc_s.strip() != "" and cur_desc_s != "Deleted":
+                    restored_desc = _desc_restore(cur_desc_s, attr_rev)
+                    if restored_desc != cur_desc_s:
+                        safe_set(obj, "desc", restored_desc, verbose=False)
 
             # restore cimRdfId
             ids = _get_cim_rdf_id(obj)
@@ -819,6 +963,9 @@ def restore_from_mapping(app, mapping_path: Path):
     finally:
         _pf_bulk_mode_end(app)
 
+    # ---------------------------------------------------------
+    # 3) Restore GPS for transformed cases AFTER cim restore
+    # ---------------------------------------------------------
     objects = collect_unique_objects_for_anonymization(app)
     cim_index_orig = _build_cim_index(objects)
 
@@ -846,6 +993,7 @@ def restore_from_mapping(app, mapping_path: Path):
             safe_set(target, "GPSlon", old_lon, verbose=False)
     finally:
         _pf_bulk_mode_end(app)
+
 
 
 # ----------------------------

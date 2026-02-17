@@ -77,9 +77,6 @@ def parse_args():
     # Automatische Mapping-Datei
     # ---------------------------
     if args.mapping_file is None:
-        # Für anonymize: Mapping wird geschrieben (Output)
-        # Für reverse: Mapping wird gelesen (Input)
-        # Default: <input_stem>_mapping.json
         args.mapping_file = args.input_file.with_name(args.input_file.stem + "_mapping.json")
 
     return args
@@ -124,8 +121,18 @@ if __name__ == "__main__":
     main()
     end = time.time()
     print(f"Dauer: {end - start:.2f} Sekunden")
+"""
 
-
+if __name__ == "__main__":
+    run_powerfactory_import_export(
+        in_path=Path(r"X:\2024_BWMK_GridAssist\06_TP3\LVN HEO1\Gridanonymisierer_test\timon_test\20kVTP3_mit_SL.pfd"),
+        out_path=Path(r"X:\2024_BWMK_GridAssist\06_TP3\LVN HEO1\Gridanonymisierer_test\timon_test\20kVTP3_mit_SL_anonym.pfd.pfd"),
+        random_seed="debug123",
+        mapping_out_path=Path(r"X:\2024_BWMK_GridAssist\06_TP3\LVN HEO1\Gridanonymisierer_test\timon_test\20kVTP3_mit_SL_mapping.json"),
+        desc=False,
+        gps=False,
+    )
+"""
 """
 Anonymise (GPS remains transformed, desc remains)   python main.py --input_file "X:\...\model.pfd"
 
