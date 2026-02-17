@@ -119,7 +119,7 @@ def _generate_seeded_uuid(old_id: str, seed: str) -> str:
 
 
 # ----------------------------
-# Anonymizer container
+# Anonymizer container (UNIFIED STRING MAPPING)
 # ----------------------------
 class SeededNameAnonymizer:
     def __init__(self, seed: str, prefix: str = "ANON_", length: int = 10):
@@ -127,39 +127,22 @@ class SeededNameAnonymizer:
         self.prefix = prefix
         self.length = int(length)
 
-        # loc_name mapping
-        self.forward: Dict[str, str] = {}  # old -> new
-        self.reverse: Dict[str, str] = {}  # new -> old
+        # One unified mapping for all ANON_* string anonymizations:
+        # original -> anon
+        self.forward: Dict[str, str] = {}
+        # anon -> original
+        self.reverse: Dict[str, str] = {}
 
-        # for_name and co mapping
-        self.attr_forward: Dict[str, Dict[str, str]] = {}
-        self.attr_reverse: Dict[str, Dict[str, str]] = {} # attr -> (old -> new)
-
-        # cimRdfId mapping
+        # cimRdfId mapping stays separate (uuid-like, not ANON_*)
         self.cim_forward: Dict[str, str] = {}  # old -> new
 
         # gps mapping keyed by ORIGINAL cimRdfId (before change)
-        # value:
-        #   {"old":[lat,lon], "new":[lat,lon]} for gps=False
-        #   {"old":[lat,lon], "deleted": True, "cim_after": "...", "full_name_after": "..."} for gps=True
         self.gps_mapping: Dict[str, dict] = {}
 
     def translate_attr(self, attr: str, value: str) -> str:
-
-        if not hasattr(self, "attr_forward") or self.attr_forward is None:
-            self.attr_forward = {}
-
-        attr = str(attr)
+        # attr is intentionally ignored now (unified mapping)
         old = "" if value is None else str(value)
-
-        m = self.attr_forward.setdefault(attr, {})
-        if old in m:
-            return m[old]
-
-        new = self.translate(old)
-        m[old] = new
-        return new
-
+        return self.translate(old)
 
     def _hash(self, text: str, length: int) -> str:
         payload = (self.seed + "\n" + str(text).strip()).encode("utf-8")
@@ -171,6 +154,7 @@ class SeededNameAnonymizer:
         if name.startswith(self.prefix):
             return name
         if name in self.reverse:
+            # already anon token
             return name
         if name in self.forward:
             return self.forward[name]
@@ -197,25 +181,47 @@ def save_mapping_json(path: Path, anonymizer: SeededNameAnonymizer):
         "seed": anonymizer.seed,
         "prefix": anonymizer.prefix,
         "length": anonymizer.length,
-        "loc_name_mapping": anonymizer.forward,
+
+        # unified mapping for all ANON_* strings
+        "anon_mapping": anonymizer.forward,
+
+        # keep separate
         "cimRdfId_mapping": anonymizer.cim_forward,
-        "attr_mappings": anonymizer.attr_forward,
         "gps_mapping": anonymizer.gps_mapping,
     }
     path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
 def load_mapping_json(path: Path) -> dict:
-    return json.loads(Path(path).read_text(encoding="utf-8"))
+    """
+    Loads mapping and supports migration from older JSONs that had:
+      - loc_name_mapping
+      - attr_mappings
+    into:
+      - anon_mapping
+    """
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+
+    if "anon_mapping" not in data:
+        merged: Dict[str, str] = {}
+        merged.update(data.get("loc_name_mapping", {}) or {})
+
+        attr_maps = data.get("attr_mappings", {}) or {}
+        if isinstance(attr_maps, dict):
+            for _, mp in attr_maps.items():
+                if isinstance(mp, dict):
+                    merged.update(mp)
+
+        data["anon_mapping"] = merged
+
+    return data
 
 
 # ----------------------------
 # PF object collection
 # ----------------------------
-
 class PfObjects:
     def __init__(self, app):
-        # Patterns to collect (extend as needed)
         patterns = [
             "*.IntPrjfolder",
             "*.IntQlim",
@@ -223,18 +229,15 @@ class PfObjects:
             "*.Typ*",
             "*.StaSwitch",
             "*.StaCubic",
-            #"*.BlkSig",
-            #"*.BlkDef",
         ]
 
-        # Collect everything in one list
         self.objects = []
-
         for pat in patterns:
             try:
                 self.objects += (app.GetCalcRelevantObjects(pat) or [])
             except Exception:
                 pass
+
         project = app.GetActiveProject()
         cimModels = project.GetContents("*.CimModel", 1)
         for cimModel in cimModels:
@@ -243,67 +246,9 @@ class PfObjects:
             except Exception:
                 pass
 
-
     def iter_all_lists(self):
         yield from self.objects
 
-"""
-class PfObjects:
-    def __init__(self, app):
-        self.intfolder = app.GetCalcRelevantObjects("*.IntPrjfolder") or []
-        self.intqlim = app.GetCalcRelevantObjects("*.IntQlim") or []
-
-        self.coup_switches = app.GetCalcRelevantObjects("*.ElmCoup") or []
-        self.terms = app.GetCalcRelevantObjects("*.ElmTerm") or []
-        self.substat = app.GetCalcRelevantObjects("*.ElmSubstat") or []
-        self.nets = app.GetCalcRelevantObjects("*.ElmXnet") or []
-        self.loads = app.GetCalcRelevantObjects("*.ElmLod") or []
-        self.bmus = app.GetCalcRelevantObjects("*.ElmBmu") or []
-        self.sites = app.GetCalcRelevantObjects("*.ElmSite") or []
-        self.lines = app.GetCalcRelevantObjects("*.ElmLne") or []
-        self.vac = app.GetCalcRelevantObjects("*.ElmVac") or []
-        self.sym = app.GetCalcRelevantObjects("*.ElmSym") or []
-        self.area = app.GetCalcRelevantObjects("*.ElmArea") or []
-
-        self.tr2 = app.GetCalcRelevantObjects("*.ElmTr2") or []
-        self.zpu = app.GetCalcRelevantObjects("*.ElmZpu") or []
-        self.secc = app.GetCalcRelevantObjects("*.ElmSecctrl") or []
-
-        self.cubic = app.GetCalcRelevantObjects("*.StaCubic") or []
-        self.sta_switches = app.GetCalcRelevantObjects("*.StaSwitch") or []
-
-        self.tline = app.GetCalcRelevantObjects("*.TypLne") or []
-        self.tsym = app.GetCalcRelevantObjects("*.TypSym") or []
-        self.ttr2 = app.GetCalcRelevantObjects("*.TypTr2") or []
-        self.tlod = app.GetCalcRelevantObjects("*.TypLod") or []
-
-    def iter_all_lists(self):
-        yield from self.intqlim
-        yield from self.intfolder
-
-        yield from self.coup_switches
-        yield from self.terms
-        yield from self.substat
-        yield from self.sta_switches
-        yield from self.nets
-        yield from self.loads
-        yield from self.bmus
-        yield from self.sites
-        yield from self.lines
-        yield from self.vac
-        yield from self.sym
-        yield from self.area
-
-        yield from self.tr2
-        yield from self.zpu
-        yield from self.secc
-        yield from self.cubic
-
-        yield from self.tline
-        yield from self.tsym
-        yield from self.ttr2
-        yield from self.tlod
-"""
 
 def parent_chain_until_network_data(obj) -> List:
     chain = []
@@ -379,13 +324,14 @@ def safe_set(obj, attr, value, *, verbose: bool = False) -> bool:
             except Exception:
                 pass
         if verbose:
-            print(f"[WARN] TypeError SetAttribute({attr}) on {obj.GetClassName()} ({getattr(obj,'loc_name','')}): {e}")
+            print(
+                f"[WARN] TypeError SetAttribute({attr}) on {obj.GetClassName()} ({getattr(obj,'loc_name','')}): {e}"
+            )
         return False
     except Exception as e:
         if verbose:
             print(f"[WARN] SetAttribute({attr}) failed on {obj.GetClassName()} ({getattr(obj,'loc_name','')}): {e}")
         return False
-
 
 
 def _get_loc_name(obj) -> str:
@@ -394,32 +340,37 @@ def _get_loc_name(obj) -> str:
     except Exception:
         return getattr(obj, "loc_name", "")
 
+
 def _set_loc_name_only(obj, new_name: str):
-    #print(obj.GetFullName())
-    #print(obj.GetClassName())
     obj.SetAttribute("loc_name", new_name)
+
 
 def _get_str_attr(obj, attr: str) -> Optional[str]:
     try:
         if not obj.HasAttribute(attr):
-            #print(attr, " not found")
             return None
     except Exception:
         return None
 
     try:
         v = obj.GetAttribute(attr)
-        if v is None:
-            return ""
-        return str(v)
     except Exception:
         try:
             v = getattr(obj, attr)
-            if v is None:
-                return ""
-            return str(v)
         except Exception:
             return None
+
+    if v is None:
+        return ""
+
+    # PF attributes may be list-like
+    if isinstance(v, (list, tuple)):
+        if len(v) == 0:
+            return ""
+        v0 = v[0]
+        return "" if v0 is None else str(v0)
+
+    return str(v)
 
 
 
@@ -452,12 +403,6 @@ def _get_full_name(obj) -> str:
 
 
 def _to_project_relative(full_name: str) -> str:
-    """
-    Convert a FullName like:
-      \\user\\proj.IntPrj\\Network Model.IntPrjfolder\\...
-    into a path relative to the project:
-      \\Network Model.IntPrjfolder\\...
-    """
     marker = r"\Network Model.IntPrjfolder"
     i = full_name.find(marker)
     if i < 0:
@@ -466,9 +411,6 @@ def _to_project_relative(full_name: str) -> str:
 
 
 def _search_by_full_name_after(app, full_name_after: str):
-    """
-    Locate an object using SearchObject() with a project-relative path.
-    """
     project = app.GetActiveProject()
     if not project:
         return None
@@ -508,7 +450,7 @@ def anonymize_string_fields(
     for attr in fields:
         old = _get_str_attr(obj, attr)
         if old is None:
-            continue  # Attribut existiert nicht auf dem Objekt
+            continue
 
         old_s = str(old).strip()
 
@@ -520,7 +462,8 @@ def anonymize_string_fields(
         new_s = anonymizer.translate_attr(attr, old_s)
 
         if new_s != old_s:
-            ok = _set_str_attr(obj, attr, new_s)
+            _set_str_attr(obj, attr, new_s)
+
 
 def _make_unique_if_needed(obj, desired: str, anonymizer: SeededNameAnonymizer) -> str:
     old = _get_loc_name(obj)
@@ -538,18 +481,17 @@ def _make_unique_if_needed(obj, desired: str, anonymizer: SeededNameAnonymizer) 
         candidate = f"{desired}_{suffix}"
         _set_loc_name_only(obj, candidate)
         if _get_loc_name(obj) != candidate:
-
             print(f"Rename failed: {old} -> {desired} (candidate {candidate} not applied)")
         return candidate
+
 
 # ----------------------------
 # DESC handling
 # ----------------------------
-
 def _sanitize_desc(obj, desc: bool, anonymizer: SeededNameAnonymizer):
     """
     desc=True  -> delete description (write 'Deleted')
-    desc=False -> anonymize description (token-based, reversible)
+    desc=False -> anonymize description (token-based, reversible via anon_mapping)
     """
     if desc:
         safe_set(obj, "desc", "Deleted", verbose=False)
@@ -569,12 +511,6 @@ def _sanitize_desc(obj, desc: bool, anonymizer: SeededNameAnonymizer):
 
 
 def _desc_normalize(s: str) -> str:
-    """
-    Normalize desc text:
-    - remove parentheses characters '(' and ')'
-    - collapse any whitespace runs into a single space
-    - keep semicolons as-is
-    """
     if s is None:
         return ""
 
@@ -595,12 +531,6 @@ def _desc_normalize(s: str) -> str:
 
 
 def _desc_tokenize_keep_delims(s: str) -> List[Tuple[str, bool]]:
-    """
-    Tokenize desc into a sequence of (text, is_delim):
-    - delimiters are ';' and single spaces
-    - tokens are non-empty runs of non-delimiter chars
-    This preserves structure for reconstruction.
-    """
     s = _desc_normalize(s)
 
     items: List[Tuple[str, bool]] = []
@@ -635,10 +565,6 @@ def _desc_tokenize_keep_delims(s: str) -> List[Tuple[str, bool]]:
 
 
 def _desc_anonymize(desc_value: str, anonymizer: "SeededNameAnonymizer") -> str:
-    """
-    Anonymize desc by anonymizing each token and keeping delimiters.
-    Tokens are separated by ';' or whitespace.
-    """
     seq = _desc_tokenize_keep_delims(desc_value)
     if not seq:
         return desc_value if desc_value is not None else ""
@@ -651,16 +577,21 @@ def _desc_anonymize(desc_value: str, anonymizer: "SeededNameAnonymizer") -> str:
             tok = text.strip()
             if tok == "":
                 continue
-            out_parts.append(anonymizer.translate_attr("desc_token", tok))
+            out_parts.append(anonymizer.translate(tok))
 
-    return _desc_normalize("".join(out_parts)).strip()
+    out = _desc_normalize("".join(out_parts)).strip()
+
+    # <<< Force delimiter to semicolon >>>
+    out = " ".join(out.split())          # normalize spaces
+    out = out.replace(" ", ";")          # spaces -> semicolons
+    out = out.replace(";;", ";")         # optional collapse
+    out = out.strip(";")
+
+    return out
 
 
-def _desc_restore(desc_value: str, attr_rev: Dict[str, Dict[str, str]]) -> str:
-    """
-    Reverse _desc_anonymize using attr_rev["desc_token"].
-    """
-    revmap = attr_rev.get("desc_token", {})
+
+def _desc_restore(desc_value: str, anon_rev: Dict[str, str], prefix: str) -> str:
     seq = _desc_tokenize_keep_delims(desc_value)
     if not seq:
         return desc_value if desc_value is not None else ""
@@ -673,9 +604,13 @@ def _desc_restore(desc_value: str, attr_rev: Dict[str, Dict[str, str]]) -> str:
             tok = text.strip()
             if tok == "":
                 continue
-            out_parts.append(revmap.get(tok, tok))
+            if tok.startswith(prefix):
+                out_parts.append(anon_rev.get(tok, tok))
+            else:
+                out_parts.append(tok)
 
     return _desc_normalize("".join(out_parts)).strip()
+
 
 # ----------------------------
 # GPS handling
@@ -794,6 +729,7 @@ def anonymize_objects(
             orig_loc = _get_loc_name(obj)
 
             orig_keys[id(obj)] = (orig_cim, orig_loc)
+
             anonymize_string_fields(
                 obj,
                 anonymizer=anonymizer,
@@ -801,7 +737,8 @@ def anonymize_objects(
                 empty_as_zero=True,
             )
 
-            #anonymize_cim_rdf_id(obj, seed, anonymizer)
+            # If you want to anonymize cimRdfId too, uncomment:
+            # anonymize_cim_rdf_id(obj, seed, anonymizer)
 
             _sanitize_desc(obj, desc, anonymizer)
 
@@ -811,12 +748,11 @@ def anonymize_objects(
                 if new_name != orig_loc:
                     _make_unique_if_needed(obj, new_name, anonymizer)
 
-            # for_name and co
-
+            # (redundant second call removed in original? kept behavior minimal)
             anonymize_string_fields(
                 obj,
                 anonymizer=anonymizer,
-                fields=["sernum", "constr", "chr_name", "dar_src", "manuf","for_name", "foreignKey"],
+                fields=["sernum", "constr", "chr_name", "dar_src", "manuf", "for_name", "foreignKey"],
                 empty_as_zero=True,
             )
 
@@ -852,30 +788,41 @@ def _build_cim_index(objs: List) -> Dict[str, object]:
         if ids:
             idx[ids[0]] = o
     return idx
+
+
 # ----------------------------
-# Restore procedure
+# Restore procedure (UNIFIED)
 # ----------------------------
+
+import re
+
+_ANON_RE = re.compile(r"\bANON_[0-9A-F]{6,}\b")  # 6+ damit auch längere Hashes gehen
+
+def restore_anon_tokens_in_text(text: str, anon_rev: Dict[str, str]) -> str:
+    def repl(m: re.Match) -> str:
+        tok = m.group(0)
+        return anon_rev.get(tok, tok)
+    return _ANON_RE.sub(repl, text)
+
 def restore_from_mapping(app, mapping_path: Path):
     """
     Restore inside an already imported project using the mapping JSON:
     - Restore GPS first for deleted=true (while anonymized identifiers are still available)
-      -> prefer cim_after, then cim mapping, then SearchObject fallback
-    - Restore loc_name
-    - Restore string attributes (sernum/constr/for_name/...) using attr_mappings
-    - Restore desc (only if it was anonymized; if it was set to 'Deleted' it is intentionally irreversible)
+    - Restore loc_name, attributes, desc using unified anon_mapping (reverse lookup by ANON_*)
     - Restore cimRdfId
-    - Restore GPS for transformed cases using original cimRdfId (after cim restore)
+    - Restore GPS for transformed cases AFTER cim restore
     """
     data = load_mapping_json(mapping_path)
 
-    loc_map: Dict[str, str] = data.get("loc_name_mapping", {}) or {}          # old -> new
-    attr_maps = data.get("attr_mappings", {}) or {}                           # attr -> (old -> new)
-    cim_map: Dict[str, str] = data.get("cimRdfId_mapping", {}) or {}          # old -> new
-    gps_map: Dict[str, dict] = data.get("gps_mapping", {}) or {}              # key = original cim (old)
+    anon_map: Dict[str, str] = data.get("anon_mapping", {}) or {}  # original -> anon
+    anon_rev: Dict[str, str] = {v: k for k, v in anon_map.items()}  # anon -> original
 
-    loc_rev = {v: k for k, v in loc_map.items()}                              # new -> old
-    attr_rev = {attr: {new: old for old, new in mp.items()} for attr, mp in attr_maps.items()}
-    cim_rev = {v: k for k, v in cim_map.items()}                              # new -> old
+    cim_map: Dict[str, str] = data.get("cimRdfId_mapping", {}) or {}  # old -> new
+    cim_rev: Dict[str, str] = {v: k for k, v in cim_map.items()}  # new -> old
+
+    gps_map: Dict[str, dict] = data.get("gps_mapping", {}) or {}
+
+    prefix = data.get("prefix", "ANON_") or "ANON_"
 
     objects = collect_unique_objects_for_anonymization(app)
 
@@ -923,36 +870,41 @@ def restore_from_mapping(app, mapping_path: Path):
     # ---------------------------------------------------------
     # 2) Restore loc_name, attributes, desc, cimRdfId
     # ---------------------------------------------------------
+    FIELDS = ["sernum", "constr", "chr_name", "dar_src", "manuf", "for_name", "foreignKey"]
+
     _pf_bulk_mode_begin(app)
     try:
         for obj in objects:
-            # restore loc_name
+            # restore loc_name by checking for prefix
             cur_name = _get_loc_name(obj)
-            if cur_name in loc_rev:
-                try:
-                    obj.SetAttribute("loc_name", loc_rev[cur_name])
-                except Exception:
-                    pass
+            if isinstance(cur_name, str) and cur_name.startswith(prefix):
+                orig = anon_rev.get(cur_name)
+                if orig:
+                    try:
+                        obj.SetAttribute("loc_name", orig)
+                    except Exception:
+                        pass
 
-            # restore generic string attributes (skip desc_token - it's not a real PF attribute)
-            for attr, revmap in attr_rev.items():
-                if attr == "desc_token":
-                    continue
+            # restore generic string attributes by checking for prefix
+            for attr in FIELDS:
                 cur_val = _get_str_attr(obj, attr)
                 if cur_val is None:
                     continue
                 cur_s = str(cur_val).strip()
-                if cur_s in revmap:
-                    _set_str_attr(obj, attr, revmap[cur_s])
+                if cur_s.startswith(prefix):
+                    orig = anon_rev.get(cur_s)
+                    if orig is not None:
+                        _set_str_attr(obj, attr, orig)
 
-            # restore desc (only if it was anonymized; "Deleted" stays as-is)
+            # restore desc (only if it was anonymized; "Deleted" stays)
             cur_desc = _get_str_attr(obj, "desc")
             if cur_desc is not None:
                 cur_desc_s = str(cur_desc)
                 if cur_desc_s.strip() != "" and cur_desc_s != "Deleted":
-                    restored_desc = _desc_restore(cur_desc_s, attr_rev)
-                    if restored_desc != cur_desc_s:
-                        safe_set(obj, "desc", restored_desc, verbose=False)
+                    restored = restore_anon_tokens_in_text(cur_desc_s, anon_rev)
+                    restored = _desc_normalize(restored).strip()
+                    if restored != cur_desc_s:
+                        safe_set(obj, "desc", restored, verbose=False)
 
             # restore cimRdfId
             ids = _get_cim_rdf_id(obj)
@@ -993,7 +945,6 @@ def restore_from_mapping(app, mapping_path: Path):
             safe_set(target, "GPSlon", old_lon, verbose=False)
     finally:
         _pf_bulk_mode_end(app)
-
 
 
 # ----------------------------
@@ -1189,6 +1140,7 @@ def run_powerfactory_restore(
     """
     Import PFD -> restore from JSON -> export PFD
     """
+    print("=== anym_PF.py: Start Reverse ===")
     in_path = Path(in_path)
     out_path = Path(out_path)
     mapping_path = Path(mapping_path)
@@ -1214,3 +1166,4 @@ def run_powerfactory_restore(
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     _export_project_to_pfd(app, out_path)
+    print("=== anym_PF.py: End Reverse ===")
