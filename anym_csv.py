@@ -1,0 +1,176 @@
+import csv
+from pathlib import Path
+from typing import Dict, List, Optional
+import json
+from anym_PF import load_mapping_json, SeededNameAnonymizer
+import re
+
+_STATUS_RE = re.compile(
+    r"\s*\(\s*(?:EIN|AUS|NZA)\s*(?:,\s*(?:EIN|AUS|NZA)\s*)?\)\s*",
+    re.IGNORECASE,
+)
+
+_ID_RE = re.compile(
+    r"\b("
+    r"(?:\d{4,}[A-Za-z]{0,3})"
+    r"|(?:\d{1,3}Z)"
+    r"|(?:[A-Za-z]{1,3}\d{1,4})"
+    r")\b",
+    re.IGNORECASE
+)
+
+def _clean_status(text: str) -> str:
+    # entfernt (EIN)/(AUS) inkl. drumherum spaces
+    return _STATUS_RE.sub(" ", text).strip()
+
+def _anonymize_ids_in_text(text: str, anonymizer: SeededNameAnonymizer) -> str:
+    def repl(m: re.Match) -> str:
+        tok = m.group(1)
+        # nur anonymisieren wenn es wirklich eine ID ist (hier: nur Ziffern + optional Lz/Pz)
+        return anonymizer.translate(tok)
+    return _ID_RE.sub(repl, text)
+
+def _detect_csv_dialect(path: Path) -> csv.Dialect:
+    with open(path, encoding="utf-8-sig", newline="") as f:
+        sample = f.read(4096)
+        f.seek(0)
+        return csv.Sniffer().sniff(sample, delimiters=";,\t")
+
+def _detect_csv_dialect(path: Path) -> csv.Dialect:
+    with open(path, encoding="utf-8-sig", newline="") as f:
+        sample = f.read(4096)
+        f.seek(0)
+        return csv.Sniffer().sniff(sample, delimiters=";,\t")
+
+def _pick_columns(fieldnames: List[str], requested: Optional[List[str]]) -> List[str]:
+    if not fieldnames:
+        return []
+
+    if requested:
+        # robust match: allow whitespace variants
+        norm = {h.strip(): h for h in fieldnames if h}
+        cols = []
+        for c in requested:
+            if c in fieldnames:
+                cols.append(c)
+            elif c.strip() in norm:
+                cols.append(norm[c.strip()])
+        return cols
+
+    # default: your known header
+    preferred = "Name Ortsnetzstation"
+    norm = {h.strip(): h for h in fieldnames if h}
+    if preferred in fieldnames:
+        return [preferred]
+    if preferred.strip() in norm:
+        return [norm[preferred.strip()]]
+
+    # fallback: first column
+    return [fieldnames[0]]
+
+def transform_csv_with_mapping(
+    csv_in: Path,
+    csv_out: Path,
+    mapping_path: Path,
+    *,
+    mode: str,
+    seed: str,
+    columns: Optional[List[str]] = None,
+):
+    print("=== anym_csv.py: Start Import/Anonymize/Export ===")
+
+    # load or create mapping
+    mapping_path = Path(mapping_path)
+    if mapping_path.exists():
+        data = load_mapping_json(mapping_path)
+        # falls seed in JSON fehlt/leer ist -> nimm den übergebenen
+        if not str(data.get("seed", "")).strip():
+            data["seed"] = seed
+    else:
+        data = {
+            "seed": seed,
+            "prefix": "ANON_",
+            "length": 10,
+            "anon_mapping": {},
+            "cimRdfId_mapping": {},
+            "gps_mapping": {},
+        }
+
+    seed = str(data.get("seed", seed))  # fallback auf übergebenen seed
+    prefix = str(data.get("prefix", "ANON_") or "ANON_")
+    length = int(data.get("length", 10) or 10)
+
+    anon_map: Dict[str, str] = data.get("anon_mapping", {}) or {}
+    anon_rev: Dict[str, str] = {v: k for k, v in anon_map.items()}
+
+    anonymizer = SeededNameAnonymizer(seed=seed, prefix=prefix, length=length)
+    anonymizer.forward.update(anon_map)
+    anonymizer.reverse.update({v: k for k, v in anon_map.items()})
+
+    csv_in = Path(csv_in)
+    csv_out = Path(csv_out)
+    csv_out.parent.mkdir(parents=True, exist_ok=True)
+
+    dialect = _detect_csv_dialect(csv_in)
+
+    with open(csv_in, encoding="utf-8-sig", newline="") as f_in:
+        reader = csv.DictReader(f_in, delimiter=dialect.delimiter)
+        fieldnames = reader.fieldnames or []
+
+        name_cols = _pick_columns(fieldnames, columns)
+        if not name_cols:
+            raise RuntimeError("Keine CSV-Header gefunden – kann keine Spalten auswählen.")
+
+        preferred_fw_col = "Schalter mit Fernwirkanschluss"
+
+        fw_col = None
+        if fieldnames:
+            norm = {h.strip(): h for h in fieldnames if h}
+            if preferred_fw_col in fieldnames:
+                fw_col = preferred_fw_col
+            elif preferred_fw_col.strip() in norm:
+                fw_col = norm[preferred_fw_col.strip()]
+
+        rows = []
+        for row in reader:
+            # 1) Stationsnamen
+            for col in name_cols:
+                val = (row.get(col, "") or "").strip()
+                if not val:
+                    continue
+                if mode.lower() == "anonymize":
+                    row[col] = anonymizer.translate(val)
+                elif mode.lower() == "restore":
+                    if val.startswith(prefix):
+                        row[col] = anon_rev.get(val, val)
+
+            # 2) Fernwirk-Spalte: Status löschen + IDs anonymisieren/restore
+            if fw_col:
+                raw = row.get(fw_col, "") or ""
+                cleaned = _clean_status(raw)
+
+                if mode.lower() == "anonymize":
+                    row[fw_col] = _anonymize_ids_in_text(cleaned, anonymizer)
+
+                elif mode.lower() == "restore":
+                    def restore_id(m: re.Match) -> str:
+                        tok = m.group(1)
+                        return anon_rev.get(tok, tok) if tok.startswith(prefix) else tok
+
+                    row[fw_col] = _ID_RE.sub(restore_id, cleaned)
+
+            rows.append(row)
+
+    # write output
+    with open(csv_out, "w", encoding="utf-8", newline="") as f_out:
+        writer = csv.DictWriter(f_out, fieldnames=fieldnames, delimiter=dialect.delimiter)
+        writer.writeheader()
+        writer.writerows(rows)
+
+    # always save mapping on anonymize (neu oder erweitert)
+    if mode.lower() == "anonymize":
+        data["anon_mapping"] = anonymizer.forward
+        mapping_path.parent.mkdir(parents=True, exist_ok=True)
+        mapping_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    print("=== anym_csv.py: End ===")

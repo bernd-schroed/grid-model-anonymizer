@@ -654,6 +654,16 @@ def _gps_apply_and_record(
     if abs(old_lat) < 1e-12 and abs(old_lon) < 1e-12:
         return
 
+    try:
+        print(obj.GPScoords)
+    except Exception:
+        pass
+
+    try:
+        obj.GPScoords = [[0.0, 0.0] for _ in obj.GPScoords]
+    except Exception:
+        pass
+
     if gps_delete:
         cur_ids = _get_cim_rdf_id(obj)
         cim_after = cur_ids[0] if cur_ids else None
@@ -723,13 +733,18 @@ def anonymize_objects(
     orig_keys: Dict[int, Tuple[Optional[str], Optional[str]]] = {}
 
     _pf_bulk_mode_begin(app)
+
     try:
         for obj in objects:
             full = obj.GetFullName()
             if not full:
                 continue
-            if full.endswith(".IntPrj") or full.endswith(".IntUser"):
+            if full.endswith(".IntPrj") or full.endswith(".IntCase") or full.endswith(".IntUser"):
                 continue
+
+            if full.endswith(".ElmLne"):
+                obj.GPScoords = [[0.0, 0.0]]  # [[0.0, 0.0] for _ in obj.GPScoords]
+
 
             ids = _get_cim_rdf_id(obj)
             orig_cim = ids[0] if ids else None
