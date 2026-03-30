@@ -226,6 +226,7 @@ class PfObjects:
             "*.IntPrjfolder",
             "*.IntQlim",
             "*.Elm*",
+            "*.ElmLod",
             "*.Typ*",
             "*.StaSwitch",
             "*.StaCubic",
