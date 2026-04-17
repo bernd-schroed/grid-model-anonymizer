@@ -32,33 +32,40 @@ def _seed_unit(seed: str, tag: str) -> float:
     return (x % 10_000_000) / 10_000_000.0
 
 
-def _build_geo_transform(seed: str, max_shift_deg: float = 2.0):
+def _build_geo_transform(seed: str, max_shift_frac: float = 0.45):
     """
-    Global transform (rotation+mirror+shift) – NOT stored in JSON,
-    only used internally for anonymization when gps=False.
+    Rotation + Translation im normalisierten Koordinatenraum.
+
+    lat/90 und lon/180 werden auf [-1, 1] normiert, dort wird eine
+    seed-basierte Rotation + Verschiebung angewandt, dann zurück auf Grad
+    gemappt.  Das vermeidet ungültige Koordinaten durch Rotation im rohen
+    Grad-Raum (wo lat/lon kein euklidischer Raum ist) und erzeugt trotzdem
+    starke Anonymisierung: Punkte in Europa landen typischerweise in Afrika
+    oder Asien.
+
+    max_shift_frac=0.45 entspricht bis zu ±40.5° Lat / ±81° Lon Verschiebung
+    zusätzlich zur Rotation.  _scale_back_to_valid_geo fängt Randfälle ab.
     """
-    angle = 2.0 * math.pi * _seed_unit(seed, "gps_angle")
-    mirror = 1  # or: _seed_hash(seed, "gps_mirror") % 2
+    def _u(tag: str) -> float:
+        h = hashlib.sha256((str(seed) + "|" + tag).encode("utf-8")).hexdigest()
+        return (int(h[:16], 16) % 10_000_000) / 10_000_000.0
 
-    dx = (2 * _seed_unit(seed, "gps_dx") - 1) * max_shift_deg
-    dy = (2 * _seed_unit(seed, "gps_dy") - 1) * max_shift_deg
-
-    c = math.cos(angle)
-    s = math.sin(angle)
+    angle  = 2.0 * math.pi * _u("gps_angle")
+    mirror = _u("gps_mirror") > 0.5
+    dx     = (2.0 * _u("gps_dx") - 1.0) * max_shift_frac
+    dy     = (2.0 * _u("gps_dy") - 1.0) * max_shift_frac
+    c, s   = math.cos(angle), math.sin(angle)
 
     def transform(lat: float, lon: float) -> Tuple[float, float]:
-        x = float(lon)
-        y = float(lat)
-
-        if mirror == 1:
-            x = -x
-
-        xr = c * x - s * y
+        x = lon / 180.0          # normieren auf [-1, 1]
+        y = lat / 90.0
+        if mirror:
+            x = -x               # Achsenspiegelung für zusätzliche Obfuskation
+        xr = c * x - s * y       # Rotation im normierten Raum
         yr = s * x + c * y
-
-        xr += dx
+        xr += dx                 # Verschiebung
         yr += dy
-        return float(yr), float(xr)
+        return yr * 90.0, xr * 180.0   # zurück auf Grad
 
     return transform
 
@@ -624,7 +631,25 @@ def _desc_restore(desc_value: str, anon_rev: Dict[str, str], prefix: str) -> str
     out = _collapse_semicolons(out)
     return out
 
-
+def _scale_back_to_valid_geo(
+    old_lat: float, old_lon: float,
+    new_lat: float, new_lon: float,
+) -> Tuple[float, float]:
+    LAT_LIMIT = 89.9
+    LON_LIMIT = 179.9
+    dlat = new_lat - old_lat
+    dlon = new_lon - old_lon
+    scale = 1.0
+    if dlat > 0 and new_lat > LAT_LIMIT:
+        scale = min(scale, (LAT_LIMIT - old_lat) / dlat)
+    elif dlat < 0 and new_lat < -LAT_LIMIT:
+        scale = min(scale, (-LAT_LIMIT - old_lat) / dlat)
+    if dlon > 0 and new_lon > LON_LIMIT:
+        scale = min(scale, (LON_LIMIT - old_lon) / dlon)
+    elif dlon < 0 and new_lon < -LON_LIMIT:
+        scale = min(scale, (-LON_LIMIT - old_lon) / dlon)
+    scale = max(0.0, scale)
+    return old_lat + scale * dlat, old_lon + scale * dlon
 # ----------------------------
 # GPS handling
 # ----------------------------
@@ -699,6 +724,8 @@ def _gps_apply_and_record(
     new_lat += dlat
     new_lon += dlon
 
+    new_lat, new_lon = _scale_back_to_valid_geo(old_lat, old_lon, new_lat, new_lon)
+
     anonymizer.gps_mapping.setdefault(
         orig_cim_id,
         {"old": [float(old_lat), float(old_lon)], "new": [float(new_lat), float(new_lon)]},
@@ -727,7 +754,7 @@ def anonymize_objects(
     GPS runs in a second pass (after loc_name / cimRdfId changes).
     """
     anonymizer = SeededNameAnonymizer(seed=seed, prefix=prefix, length=length)
-    gps_transform = _build_geo_transform(seed, max_shift_deg=2.0)
+    gps_transform = _build_geo_transform(seed)
 
     # Store original keys for the second pass:
     # python object id -> (orig_cim_id, orig_loc_name)
