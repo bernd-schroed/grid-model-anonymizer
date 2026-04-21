@@ -848,7 +848,6 @@ import re
 
 _ANON_RE = re.compile(r"\bANON_[0-9A-F]{6,}\b")  # 6+ damit auch längere Hashes gehen
 
-import re
 
 def _collapse_semicolons(s: str) -> str:
     s = re.sub(r";{2,}", ";", s)   # ;; oder mehr -> ;
