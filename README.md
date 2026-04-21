@@ -74,6 +74,7 @@ python main.py --input_file "model.pfd" --no-gps --no-desc
 # Restore
 python main.py --input_file "model_anonym.pfd" --reverse --mapping_file "model_mapping.json"
 ```
+> **Please exercise caution when using PF! Please back up your projects beforehand. If a project with the same name is loaded during this process, the process will delete the existing project and overwrite it with the newly imported project.**
 
 ### CGMES 2.4 (`.zip` / `.xml`)
 
@@ -252,6 +253,7 @@ When anonymizing a CSV after a PFD or CGMES model, point `--mapping_file` to the
 
 ## Authors
 
-Timon Conrad – FAU Erlangen-Nürnberg (EES/LEES)  
+Timon Conrad – FAU Erlangen-Nürnberg 
 AI assistance: ChatGPT 5.2 + Claude
+
 Version 2.0 – April 2026
