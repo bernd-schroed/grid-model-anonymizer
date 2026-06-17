@@ -11,7 +11,56 @@ import math
 import psutil
 
 # PowerFactory Python path
-sys.path.append(r"C:\Program Files\DIgSILENT\PowerFactory 2024 SP7\Python\3.9")
+def get_pf_version() -> Path:
+    # Getting the PowerFactory Version
+    search_paths = [
+        Path(r"C:\Program Files\DIgSILENT"),
+        Path(r"C:\Program Files (x86)\DIgSILENT"),
+    ]
+
+    versions = {}
+
+    for base in search_paths:
+        if not base.exists():
+            continue
+
+        for entry in base.iterdir():
+            if entry.is_dir() and entry.name.startswith("PowerFactory"):
+                version = entry.name.replace("PowerFactory", "").strip()
+
+                versions[version] = str(entry)
+
+    versions = {
+        version: path
+        for version, path in versions.items()
+        if "LicenceManager".lower() not in version.lower()
+    }
+
+    _, last_path = sorted(versions.items())[-1]
+    return Path(last_path)
+
+
+def check_avbl_python_version(pf_path: Path, py_version: str):
+    search_path = Path(pf_path, "Python")
+    possible_versions = [version.name for version in search_path.iterdir()]
+    if not any(version == py_version for version in possible_versions):
+        exit(
+            f"\nError: This Python Version {py_version} is not compatible with the current version of PowerFactory. Try one of the following Python versions instead: {possible_versions}.\n"
+        )
+
+
+pf_path = get_pf_version()
+
+python_major_version = sys.version_info.major
+python_minor_version = sys.version_info.minor
+py_version = f"{str(python_major_version)}.{str(python_minor_version)}"
+check_avbl_python_version(pf_path, py_version)
+
+# PowerFactory Python path
+pf_python_path = Path(pf_path, "Python", py_version)
+
+sys.path.append(str(pf_python_path))
+
 import powerfactory as pf  # type: ignore
 
 
