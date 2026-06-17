@@ -25,6 +25,7 @@ Design rationale
 
 Depends on: lxml, anym_PF (SeededNameAnonymizer etc.)
 """
+
 from __future__ import annotations
 
 import json
@@ -65,16 +66,16 @@ ANON_TEXT_LOCALS: Set[str] = {
     "IdentifiedObject.description",
     "IdentifiedObject.shortName",
     "IdentifiedObject.aliasName",
-    "Model.description",        # md:FullModel header – often contains TSO/DSO name
+    "Model.description",  # md:FullModel header – often contains TSO/DSO name
 }
 
 # GPS coordinate element local names (GL profile, CGMES 2.4 and 3.0)
 GPS_X_LOCALS: Set[str] = {
-    "PositionPoint.xPosition",      # longitude in CGMES GL
-    "CoordinatePair.xPosition",     # older profile variant
+    "PositionPoint.xPosition",  # longitude in CGMES GL
+    "CoordinatePair.xPosition",  # older profile variant
 }
 GPS_Y_LOCALS: Set[str] = {
-    "PositionPoint.yPosition",      # latitude in CGMES GL
+    "PositionPoint.yPosition",  # latitude in CGMES GL
     "CoordinatePair.yPosition",
 }
 
@@ -82,6 +83,7 @@ GPS_Y_LOCALS: Set[str] = {
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _local(tag: str) -> str:
     """Clark notation {ns}localname -> localname."""
@@ -106,6 +108,7 @@ def _strip_hash(ref: str) -> str:
 # XML I/O
 # ---------------------------------------------------------------------------
 
+
 def _parse_xml(path: Path) -> etree._ElementTree:
     parser = etree.XMLParser(remove_comments=False, remove_blank_text=False)
     return etree.parse(str(path), parser)
@@ -121,10 +124,11 @@ def _serialise_xml(tree: etree._ElementTree, path: Path) -> None:
     )
 
 
-
 def _scale_back_to_valid_geo(
-    old_lat: float, old_lon: float,
-    new_lat: float, new_lon: float,
+    old_lat: float,
+    old_lon: float,
+    new_lat: float,
+    new_lon: float,
 ) -> Tuple[float, float]:
     """
     If the transformed point falls outside the valid geographic range
@@ -155,9 +159,11 @@ def _scale_back_to_valid_geo(
     scale = max(0.0, scale)
     return old_lat + scale * dlat, old_lon + scale * dlon
 
+
 # ---------------------------------------------------------------------------
 # GPS transform
 # ---------------------------------------------------------------------------
+
 
 def _apply_gps_pair(
     x_el: etree._Element,
@@ -220,6 +226,7 @@ def _apply_gps_pair(
 # Per-tree anonymization pass
 # ---------------------------------------------------------------------------
 
+
 def _anonymize_tree(
     tree: etree._ElementTree,
     *,
@@ -263,7 +270,7 @@ def _anonymize_tree(
         v = _strip_hash(p.get(RDF_ABOUT) or "")
         if v:
             return v
-        return tree.getpath(p)   # unique XPath fallback
+        return tree.getpath(p)  # unique XPath fallback
 
     gps_buckets: Dict[str, Dict] = {}
 
@@ -293,7 +300,8 @@ def _anonymize_tree(
             skipped += 1
             continue
         _apply_gps_pair(
-            x_el, y_el,
+            x_el,
+            y_el,
             seed=seed,
             gps_delete=gps_delete,
             gps_transform=gps_transform,
@@ -355,19 +363,25 @@ def _anonymize_tree(
             bare = _strip_hash(raw_about)
             if bare in anonymizer.cim_forward:
                 new_bare = anonymizer.cim_forward[bare]
-                el.set(RDF_ABOUT, "#" + new_bare if raw_about.startswith("#") else new_bare)
+                el.set(
+                    RDF_ABOUT, "#" + new_bare if raw_about.startswith("#") else new_bare
+                )
 
         raw_res = el.get(RDF_RESOURCE)
         if raw_res:
             bare = _strip_hash(raw_res)
             if bare in anonymizer.cim_forward:
                 new_bare = anonymizer.cim_forward[bare]
-                el.set(RDF_RESOURCE, "#" + new_bare if raw_res.startswith("#") else new_bare)
+                el.set(
+                    RDF_RESOURCE,
+                    "#" + new_bare if raw_res.startswith("#") else new_bare,
+                )
 
 
 # ---------------------------------------------------------------------------
 # Per-tree restore pass
 # ---------------------------------------------------------------------------
+
 
 def _restore_tree(
     tree: etree._ElementTree,
@@ -406,7 +420,9 @@ def _restore_tree(
                 bare = _strip_hash(raw_res)
                 if bare in cim_rev:
                     orig = cim_rev[bare]
-                    el.set(RDF_RESOURCE, "#" + orig if raw_res.startswith("#") else orig)
+                    el.set(
+                        RDF_RESOURCE, "#" + orig if raw_res.startswith("#") else orig
+                    )
 
     # Restore GPS
     gps_buckets: Dict[str, Dict[str, etree._Element]] = {}
@@ -451,6 +467,7 @@ def _restore_tree(
 # ---------------------------------------------------------------------------
 # Bundle I/O helpers
 # ---------------------------------------------------------------------------
+
 
 def _extract_bundle(src: Path, tmp_dir: Path) -> List[Tuple[str, Path]]:
     """
@@ -505,6 +522,7 @@ def _pack_bundle(
 # ---------------------------------------------------------------------------
 # Public entrypoint: anonymize
 # ---------------------------------------------------------------------------
+
 
 def anonymize_cgmes(
     in_path: Path,
@@ -585,6 +603,7 @@ def anonymize_cgmes(
 # ---------------------------------------------------------------------------
 # Public entrypoint: restore
 # ---------------------------------------------------------------------------
+
 
 def restore_cgmes(
     in_path: Path,

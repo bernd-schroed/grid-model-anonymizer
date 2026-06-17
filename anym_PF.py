@@ -1,14 +1,16 @@
 # anym_PF.py
 from __future__ import annotations
 
-from pathlib import Path
+import hashlib
+import json
+import math
 import os
 import sys
-import json
-import hashlib
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple
-import math
+
 import psutil
+
 
 # PowerFactory Python path
 def get_pf_version() -> Path:
@@ -95,26 +97,27 @@ def _build_geo_transform(seed: str, max_shift_frac: float = 0.45):
     max_shift_frac=0.45 entspricht bis zu ±40.5° Lat / ±81° Lon Verschiebung
     zusätzlich zur Rotation.  _scale_back_to_valid_geo fängt Randfälle ab.
     """
+
     def _u(tag: str) -> float:
         h = hashlib.sha256((str(seed) + "|" + tag).encode("utf-8")).hexdigest()
         return (int(h[:16], 16) % 10_000_000) / 10_000_000.0
 
-    angle  = 2.0 * math.pi * _u("gps_angle")
+    angle = 2.0 * math.pi * _u("gps_angle")
     mirror = _u("gps_mirror") > 0.5
-    dx     = (2.0 * _u("gps_dx") - 1.0) * max_shift_frac
-    dy     = (2.0 * _u("gps_dy") - 1.0) * max_shift_frac
-    c, s   = math.cos(angle), math.sin(angle)
+    dx = (2.0 * _u("gps_dx") - 1.0) * max_shift_frac
+    dy = (2.0 * _u("gps_dy") - 1.0) * max_shift_frac
+    c, s = math.cos(angle), math.sin(angle)
 
     def transform(lat: float, lon: float) -> Tuple[float, float]:
-        x = lon / 180.0          # normieren auf [-1, 1]
+        x = lon / 180.0  # normieren auf [-1, 1]
         y = lat / 90.0
         if mirror:
-            x = -x               # Achsenspiegelung für zusätzliche Obfuskation
-        xr = c * x - s * y       # Rotation im normierten Raum
+            x = -x  # Achsenspiegelung für zusätzliche Obfuskation
+        xr = c * x - s * y  # Rotation im normierten Raum
         yr = s * x + c * y
-        xr += dx                 # Verschiebung
+        xr += dx  # Verschiebung
         yr += dy
-        return yr * 90.0, xr * 180.0   # zurück auf Grad
+        return yr * 90.0, xr * 180.0  # zurück auf Grad
 
     return transform
 
@@ -237,10 +240,8 @@ def save_mapping_json(path: Path, anonymizer: SeededNameAnonymizer):
         "seed": anonymizer.seed,
         "prefix": anonymizer.prefix,
         "length": anonymizer.length,
-
         # unified mapping for all ANON_* strings
         "anon_mapping": anonymizer.forward,
-
         # keep separate
         "cimRdfId_mapping": anonymizer.cim_forward,
         "gps_mapping": anonymizer.gps_mapping,
@@ -292,7 +293,7 @@ class PfObjects:
         self.objects = []
         for pat in patterns:
             try:
-                self.objects += (app.GetCalcRelevantObjects(pat) or [])
+                self.objects += app.GetCalcRelevantObjects(pat) or []
             except Exception:
                 pass
 
@@ -308,12 +309,10 @@ class PfObjects:
 
         for map in mapsinfos:
             try:
-                #map.Delete()
+                # map.Delete()
                 map.loc_name = "Deleted"
             except Exception:
                 pass
-
-
 
     def iter_all_lists(self):
         yield from self.objects
@@ -399,7 +398,9 @@ def safe_set(obj, attr, value, *, verbose: bool = False) -> bool:
         return False
     except Exception as e:
         if verbose:
-            print(f"[WARN] SetAttribute({attr}) failed on {obj.GetClassName()} ({getattr(obj,'loc_name','')}): {e}")
+            print(
+                f"[WARN] SetAttribute({attr}) failed on {obj.GetClassName()} ({getattr(obj,'loc_name','')}): {e}"
+            )
         return False
 
 
@@ -440,7 +441,6 @@ def _get_str_attr(obj, attr: str) -> Optional[str]:
         return "" if v0 is None else str(v0)
 
     return str(v)
-
 
 
 def _set_str_attr(obj, attr: str, value: str) -> bool:
@@ -550,7 +550,9 @@ def _make_unique_if_needed(obj, desired: str, anonymizer: SeededNameAnonymizer) 
         candidate = f"{desired}_{suffix}"
         _set_loc_name_only(obj, candidate)
         if _get_loc_name(obj) != candidate:
-            print(f"Rename failed: {old} -> {desired} (candidate {candidate} not applied)")
+            print(
+                f"Rename failed: {old} -> {desired} (candidate {candidate} not applied)"
+            )
         return candidate
 
 
@@ -657,7 +659,6 @@ def _desc_anonymize(desc_value: str, anonymizer: "SeededNameAnonymizer") -> str:
     return out
 
 
-
 def _desc_restore(desc_value: str, anon_rev: Dict[str, str], prefix: str) -> str:
     seq = _desc_tokenize_keep_delims(desc_value)
     if not seq:
@@ -680,9 +681,12 @@ def _desc_restore(desc_value: str, anon_rev: Dict[str, str], prefix: str) -> str
     out = _collapse_semicolons(out)
     return out
 
+
 def _scale_back_to_valid_geo(
-    old_lat: float, old_lon: float,
-    new_lat: float, new_lon: float,
+    old_lat: float,
+    old_lon: float,
+    new_lat: float,
+    new_lon: float,
 ) -> Tuple[float, float]:
     LAT_LIMIT = 89.9
     LON_LIMIT = 179.9
@@ -699,6 +703,8 @@ def _scale_back_to_valid_geo(
         scale = min(scale, (-LON_LIMIT - old_lon) / dlon)
     scale = max(0.0, scale)
     return old_lat + scale * dlat, old_lon + scale * dlon
+
+
 # ----------------------------
 # GPS handling
 # ----------------------------
@@ -777,7 +783,10 @@ def _gps_apply_and_record(
 
     anonymizer.gps_mapping.setdefault(
         orig_cim_id,
-        {"old": [float(old_lat), float(old_lon)], "new": [float(new_lat), float(new_lon)]},
+        {
+            "old": [float(old_lat), float(old_lon)],
+            "new": [float(new_lat), float(new_lon)],
+        },
     )
 
     safe_set(obj, "GPSlat", float(new_lat), verbose=False)
@@ -816,12 +825,15 @@ def anonymize_objects(
             full = obj.GetFullName()
             if not full:
                 continue
-            if full.endswith(".IntPrj") or full.endswith(".IntCase") or full.endswith(".IntUser"):
+            if (
+                full.endswith(".IntPrj")
+                or full.endswith(".IntCase")
+                or full.endswith(".IntUser")
+            ):
                 continue
 
             if full.endswith(".ElmLne"):
                 obj.GPScoords = [[0.0, 0.0]]  # [[0.0, 0.0] for _ in obj.GPScoords]
-
 
             ids = _get_cim_rdf_id(obj)
             orig_cim = ids[0] if ids else None
@@ -832,7 +844,15 @@ def anonymize_objects(
             anonymize_string_fields(
                 obj,
                 anonymizer=anonymizer,
-                fields=["sernum", "constr", "chr_name", "dar_src", "manuf", "for_name", "foreignKey"],
+                fields=[
+                    "sernum",
+                    "constr",
+                    "chr_name",
+                    "dar_src",
+                    "manuf",
+                    "for_name",
+                    "foreignKey",
+                ],
                 empty_as_zero=True,
             )
 
@@ -851,7 +871,15 @@ def anonymize_objects(
             anonymize_string_fields(
                 obj,
                 anonymizer=anonymizer,
-                fields=["sernum", "constr", "chr_name", "dar_src", "manuf", "for_name", "foreignKey"],
+                fields=[
+                    "sernum",
+                    "constr",
+                    "chr_name",
+                    "dar_src",
+                    "manuf",
+                    "for_name",
+                    "foreignKey",
+                ],
                 empty_as_zero=True,
             )
 
@@ -862,7 +890,12 @@ def anonymize_objects(
     try:
         for obj in objects:
             full = obj.GetFullName()
-            if full.endswith(".IntPrj") or full.endswith(".IntUser") or full == "" or full is None:
+            if (
+                full.endswith(".IntPrj")
+                or full.endswith(".IntUser")
+                or full == ""
+                or full is None
+            ):
                 continue
             orig_cim, orig_loc = orig_keys.get(id(obj), (None, None))
             _gps_apply_and_record(
@@ -899,15 +932,18 @@ _ANON_RE = re.compile(r"\bANON_[0-9A-F]{6,}\b")  # 6+ damit auch längere Hashes
 
 
 def _collapse_semicolons(s: str) -> str:
-    s = re.sub(r";{2,}", ";", s)   # ;; oder mehr -> ;
+    s = re.sub(r";{2,}", ";", s)  # ;; oder mehr -> ;
     s = s.strip(";")
     return s
+
 
 def restore_anon_tokens_in_text(text: str, anon_rev: Dict[str, str]) -> str:
     def repl(m: re.Match) -> str:
         tok = m.group(0)
         return anon_rev.get(tok, tok)
+
     return _ANON_RE.sub(repl, text)
+
 
 def restore_from_mapping(app, mapping_path: Path):
     """
@@ -975,7 +1011,15 @@ def restore_from_mapping(app, mapping_path: Path):
     # ---------------------------------------------------------
     # 2) Restore loc_name, attributes, desc, cimRdfId
     # ---------------------------------------------------------
-    FIELDS = ["sernum", "constr", "chr_name", "dar_src", "manuf", "for_name", "foreignKey"]
+    FIELDS = [
+        "sernum",
+        "constr",
+        "chr_name",
+        "dar_src",
+        "manuf",
+        "for_name",
+        "foreignKey",
+    ]
 
     _pf_bulk_mode_begin(app)
     try:
@@ -1113,7 +1157,10 @@ def _activate_project(app, project_name: str):
     prjs = _list_projects(user)
 
     for p in prjs:
-        if getattr(p, "loc_name", "") in (project_name, project_name.replace("_anonym", "")):
+        if getattr(p, "loc_name", "") in (
+            project_name,
+            project_name.replace("_anonym", ""),
+        ):
             if hasattr(p, "Activate"):
                 p.Activate()
                 return app.GetActiveProject()
@@ -1193,7 +1240,9 @@ def run_powerfactory_import_export(
 
     app = pf.GetApplication()
     if not app:
-        raise RuntimeError("PowerFactory Application not available (pf.GetApplication() returned None).")
+        raise RuntimeError(
+            "PowerFactory Application not available (pf.GetApplication() returned None)."
+        )
 
     app.ClearOutputWindow()
     print("=== anym_PF.py: Start Import/Anonymize/Export ===")

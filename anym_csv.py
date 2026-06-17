@@ -1,9 +1,10 @@
 import csv
+import json
+import re
 from pathlib import Path
 from typing import Dict, List, Optional
-import json
-from anym_PF import load_mapping_json, SeededNameAnonymizer
-import re
+
+from anym_PF import SeededNameAnonymizer, load_mapping_json
 
 _STATUS_RE = re.compile(
     r"\s*\(\s*(?:EIN|AUS|NZA)\s*(?:,\s*(?:EIN|AUS|NZA)\s*)?\)\s*",
@@ -16,31 +17,37 @@ _ID_RE = re.compile(
     r"|(?:\d{1,3}Z)"
     r"|(?:[A-Za-z]{1,3}\d{1,4})"
     r")\b",
-    re.IGNORECASE
+    re.IGNORECASE,
 )
+
 
 def _clean_status(text: str) -> str:
     # entfernt (EIN)/(AUS) inkl. drumherum spaces
     return _STATUS_RE.sub(" ", text).strip()
+
 
 def _anonymize_ids_in_text(text: str, anonymizer: SeededNameAnonymizer) -> str:
     def repl(m: re.Match) -> str:
         tok = m.group(1)
         # nur anonymisieren wenn es wirklich eine ID ist (hier: nur Ziffern + optional Lz/Pz)
         return anonymizer.translate(tok)
+
     return _ID_RE.sub(repl, text)
 
-def _detect_csv_dialect(path: Path) -> csv.Dialect:
-    with open(path, encoding="utf-8-sig", newline="") as f:
-        sample = f.read(4096)
-        f.seek(0)
-        return csv.Sniffer().sniff(sample, delimiters=";,\t")
 
 def _detect_csv_dialect(path: Path) -> csv.Dialect:
     with open(path, encoding="utf-8-sig", newline="") as f:
         sample = f.read(4096)
         f.seek(0)
         return csv.Sniffer().sniff(sample, delimiters=";,\t")
+
+
+def _detect_csv_dialect(path: Path) -> csv.Dialect:
+    with open(path, encoding="utf-8-sig", newline="") as f:
+        sample = f.read(4096)
+        f.seek(0)
+        return csv.Sniffer().sniff(sample, delimiters=";,\t")
+
 
 def _pick_columns(fieldnames: List[str], requested: Optional[List[str]]) -> List[str]:
     if not fieldnames:
@@ -67,6 +74,7 @@ def _pick_columns(fieldnames: List[str], requested: Optional[List[str]]) -> List
 
     # fallback: first column
     return [fieldnames[0]]
+
 
 def transform_csv_with_mapping(
     csv_in: Path,
@@ -119,7 +127,9 @@ def transform_csv_with_mapping(
 
         name_cols = _pick_columns(fieldnames, columns)
         if not name_cols:
-            raise RuntimeError("Keine CSV-Header gefunden – kann keine Spalten auswählen.")
+            raise RuntimeError(
+                "Keine CSV-Header gefunden – kann keine Spalten auswählen."
+            )
 
         preferred_fw_col = "Schalter mit Fernwirkanschluss"
 
@@ -153,6 +163,7 @@ def transform_csv_with_mapping(
                     row[fw_col] = _anonymize_ids_in_text(cleaned, anonymizer)
 
                 elif mode.lower() == "restore":
+
                     def restore_id(m: re.Match) -> str:
                         tok = m.group(1)
                         return anon_rev.get(tok, tok) if tok.startswith(prefix) else tok
@@ -163,7 +174,9 @@ def transform_csv_with_mapping(
 
     # write output
     with open(csv_out, "w", encoding="utf-8", newline="") as f_out:
-        writer = csv.DictWriter(f_out, fieldnames=fieldnames, delimiter=dialect.delimiter)
+        writer = csv.DictWriter(
+            f_out, fieldnames=fieldnames, delimiter=dialect.delimiter
+        )
         writer.writeheader()
         writer.writerows(rows)
 
@@ -171,6 +184,8 @@ def transform_csv_with_mapping(
     if mode.lower() == "anonymize":
         data["anon_mapping"] = anonymizer.forward
         mapping_path.parent.mkdir(parents=True, exist_ok=True)
-        mapping_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+        mapping_path.write_text(
+            json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
 
     print("=== anym_csv.py: End ===")
