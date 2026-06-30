@@ -28,13 +28,12 @@ Depends on: lxml, anym_PF (SeededNameAnonymizer etc.)
 
 from __future__ import annotations
 
-import json
 import math
 import shutil
 import tempfile
 import zipfile
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Set, Tuple
 
 from lxml import etree
 
@@ -501,7 +500,6 @@ def _extract_bundle(src: Path, tmp_dir: Path) -> List[Tuple[str, Path]]:
 
 
 def _pack_bundle(
-    tmp_dir: Path,
     xml_files: List[Tuple[str, Path]],
     out: Path,
 ) -> None:
@@ -589,7 +587,7 @@ def anonymize_cgmes(
             _serialise_xml(tree, path)
 
         out_path.parent.mkdir(parents=True, exist_ok=True)
-        _pack_bundle(tmp_dir, [(rel, path) for rel, path, _ in trees], out_path)
+        _pack_bundle([(rel, path) for rel, path, _ in trees], out_path)
 
     save_mapping_json(mapping_out_path, anonymizer)
     print(f"  Mapping saved   : {mapping_out_path}")
@@ -657,7 +655,7 @@ def restore_cgmes(
             _serialise_xml(tree, path)
 
         out_path.parent.mkdir(parents=True, exist_ok=True)
-        _pack_bundle(tmp_dir, [(rel, path) for rel, path, _ in trees], out_path)
+        _pack_bundle([(rel, path) for rel, path, _ in trees], out_path)
 
     print(f"  Output: {out_path}")
     print("=== anym_cgmes.py: Restore Done ===")
