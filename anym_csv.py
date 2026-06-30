@@ -42,13 +42,6 @@ def _detect_csv_dialect(path: Path) -> csv.Dialect:
         return csv.Sniffer().sniff(sample, delimiters=";,\t")
 
 
-def _detect_csv_dialect(path: Path) -> csv.Dialect:
-    with open(path, encoding="utf-8-sig", newline="") as f:
-        sample = f.read(4096)
-        f.seek(0)
-        return csv.Sniffer().sniff(sample, delimiters=";,\t")
-
-
 def _pick_columns(fieldnames: List[str], requested: Optional[List[str]]) -> List[str]:
     if not fieldnames:
         return []
