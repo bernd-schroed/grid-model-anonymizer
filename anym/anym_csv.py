@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from anym.anym_PF import SeededNameAnonymizer, load_mapping_json
+from utils import SeededNameAnonymizer, load_mapping_json
 
 _STATUS_RE = re.compile(
     r"\s*\(\s*(?:EIN|AUS|NZA)\s*(?:,\s*(?:EIN|AUS|NZA)\s*)?\)\s*",
