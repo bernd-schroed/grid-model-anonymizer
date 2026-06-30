@@ -67,10 +67,31 @@ from anym.anym_cgmes import anonymize_cgmes, restore_cgmes
 from anym.anym_csv import transform_csv_with_mapping
 from anym.anym_PF import run_powerfactory_import_export, run_powerfactory_restore
 
-# from anym_panda_power import stuff
-
 
 def parse_args():
+    """
+    Argument Parser to collect paramaters for the main function.
+    Args:
+        input_file (Path):
+            Input file: .pfd, .zip (CGMES bundle), .xml (single CGMES file), or .csv
+        seed (str):
+            Seed for deterministic anonymization (anonymize mode only)
+        output_file (Path):
+            Output file (derived automatically if omitted)
+        mapping_file (Path):
+            Mapping JSON (output when anonymizing, input when restoring).
+            Derived automatically if omitted."
+        reverse:
+            Restore / reverse anonymization instead of anonymizing
+        no-gps
+            Delete GPS coordinates (set to 0,0) instead of applying transform+jitter
+        no-desc
+            Replace descriptions with 'Deleted' instead of anonymizing them
+        remap-ids
+            CGMES only: also remap rdf:ID / rdf:about / rdf:resource values.
+            Default: off (CGMES IDs are already UUIDs without readable names).
+            Enable if your IDs contain readable substation or asset names.
+    """
     parser = argparse.ArgumentParser(
         description="Anonymizer for PowerFactory .pfd, CGMES .zip/.xml, and .csv files"
     )
@@ -100,7 +121,10 @@ def parse_args():
         "--mapping_file",
         type=Path,
         default=None,
-        help="Mapping JSON (output when anonymizing, input when restoring). Derived automatically if omitted.",
+        help=(
+            "Mapping JSON (output when anonymizing, input when restoring). "
+            "Derived automatically if omitted."
+        ),
     )
 
     parser.add_argument(
@@ -143,7 +167,10 @@ def parse_args():
         "--csv-columns",
         type=str,
         default=None,
-        help="Comma-separated CSV column names to anonymize. Default: 'Name Ortsnetzstation' or first column.",
+        help=str(
+            "Comma-separated CSV column names to anonymize. Default: "
+            "'Name Ortsnetzstation' or first column.",
+        ),
     )
 
     args = parser.parse_args()
@@ -178,6 +205,9 @@ def _is_cgmes(path: Path) -> bool:
 
 
 def main():
+    """
+    Main Function to anonymize and reconstruct. Uses argparse for parameters
+    """
     args = parse_args()
 
     print("input_file  :", args.input_file)
