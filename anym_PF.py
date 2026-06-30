@@ -63,7 +63,7 @@ pf_python_path = Path(pf_path, "Python", py_version)
 
 sys.path.append(str(pf_python_path))
 
-import powerfactory as pf  # type: ignore
+import powerfactory as pf  # pylint: disable=import-error,wrong-import-position
 
 
 # ----------------------------

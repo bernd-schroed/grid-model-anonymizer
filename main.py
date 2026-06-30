@@ -2,6 +2,8 @@ import argparse
 import time
 from pathlib import Path
 
+from anym_cgmes import anonymize_cgmes, restore_cgmes
+from anym_csv import transform_csv_with_mapping
 from anym_PF import run_powerfactory_import_export, run_powerfactory_restore
 from anym_csv import transform_csv_with_mapping
 from anym_cgmes import anonymize_cgmes, restore_cgmes
@@ -102,7 +104,9 @@ def parse_args():
 
     # --- Auto-derive mapping file ---
     if args.mapping_file is None:
-        args.mapping_file = args.input_file.with_name(args.input_file.stem + "_mapping.json")
+        args.mapping_file = args.input_file.with_name(
+            args.input_file.stem + "_mapping.json"
+        )
 
     return args
 
