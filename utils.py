@@ -26,7 +26,7 @@ class SeededNameAnonymizer:
         # gps mapping keyed by ORIGINAL cimRdfId (before change)
         self.gps_mapping: Dict[str, dict] = {}
 
-    def translate_attr(self, attr: str, value: str) -> str:
+    def translate_attr(self, attr: str, value: str) -> str:  # type: ignore # pylint:disable=unused-argument
         # attr is intentionally ignored now (unified mapping)
         old = "" if value is None else str(value)
         return self.translate(old)
@@ -34,6 +34,9 @@ class SeededNameAnonymizer:
     def _hash(self, text: str, length: int) -> str:
         payload = (self.seed + "\n" + str(text).strip()).encode("utf-8")
         return hashlib.sha256(payload).hexdigest().upper()[:length]
+
+    def get_hash(self, text: str, length: int) -> str:
+        return self._hash(text, length)
 
     def translate(self, name: str) -> str:
         if not name:

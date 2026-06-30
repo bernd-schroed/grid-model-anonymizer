@@ -24,6 +24,13 @@ from utils import (
 
 # PowerFactory Python path
 def get_pf_version() -> Path:
+    """To see if current python and PowerFactory are compatible, check which power factory is installed
+    Inputs:
+        None.
+
+    Output:
+        Path: The most recent installed PowerFactory version
+    """
     # Getting the PowerFactory Version
     search_paths = [
         Path(r"C:\Program Files\DIgSILENT"),
@@ -52,28 +59,44 @@ def get_pf_version() -> Path:
     return Path(last_path)
 
 
-def check_avbl_python_version(pf_path: Path, py_version: str):
-    search_path = Path(pf_path, "Python")
+def check_python_pf_compatibility(powerfactory_path: Path, py_version: str) -> None:
+    """
+    Checks if PowerFactory and python are compatible. If Not it prints,
+    which python versions would be for this PowerFactory Version.
+    Inputs:
+        powerfactory_path (Path):
+            The location of the used PowerFactory Instance
+        py_version:
+            the used python version as string ("3.11" e.g.)
+    Outputs:
+        None.
+    """
+    search_path = Path(powerfactory_path, "Python")
     possible_versions = [version.name for version in search_path.iterdir()]
     if not any(version == py_version for version in possible_versions):
         exit(
-            f"\nError: This Python Version {py_version} is not compatible with the current version of PowerFactory. Try one of the following Python versions instead: {possible_versions}.\n"
+            f"""\nError: This Python Version {py_version} is not compatible with the current 
+            version of PowerFactory. Try one of the following Python versions instead: 
+            {possible_versions}.\n"""
         )
 
 
 pf_path = get_pf_version()
 
+# set python version
 python_major_version = sys.version_info.major
 python_minor_version = sys.version_info.minor
-py_version = f"{str(python_major_version)}.{str(python_minor_version)}"
-check_avbl_python_version(pf_path, py_version)
+PY_VERSION = f"{str(python_major_version)}.{str(python_minor_version)}"
+
+
+check_python_pf_compatibility(pf_path, PY_VERSION)
 
 # PowerFactory Python path
-pf_python_path = Path(pf_path, "Python", py_version)
+pf_python_path = Path(pf_path, "Python", PY_VERSION)
 
 sys.path.append(str(pf_python_path))
 
-import powerfactory as pf  # pylint: disable=import-error,wrong-import-position
+import powerfactory as pf  # type: ignore # pylint: disable=import-error,wrong-import-position,wrong-import-order
 
 
 # ----------------------------
@@ -139,7 +162,7 @@ class PfObjects:
         for pat in patterns:
             try:
                 self.objects += app.GetCalcRelevantObjects(pat) or []
-            except Exception:
+            except (AttributeError, TypeError):
                 pass
 
         project = app.GetActiveProject()
@@ -147,16 +170,16 @@ class PfObjects:
         for cimModel in cimModels:
             try:
                 cimModel.Delete()
-            except Exception:
+            except AttributeError:
                 pass
 
         mapsinfos = project.GetContents("*.IntGrf", 1)
 
-        for map in mapsinfos:
+        for single_map in mapsinfos:
             try:
                 # map.Delete()
-                map.loc_name = "Deleted"
-            except Exception:
+                single_map.loc_name = "Deleted"
+            except AttributeError:
                 pass
 
     def iter_all_lists(self):
@@ -181,14 +204,14 @@ def collect_unique_objects_for_anonymization(app) -> List:
     for obj in pf_objs.iter_all_lists():
         try:
             key = obj.GetFullName()
-        except Exception:
+        except AttributeError:
             key = f"{obj.GetClassName()}::{getattr(obj, 'loc_name', '')}"
         unique.setdefault(key, obj)
 
         for parent in parent_chain_until_network_data(obj):
             try:
                 pkey = parent.GetFullName()
-            except Exception:
+            except AttributeError:
                 pkey = f"{parent.GetClassName()}::{getattr(parent, 'loc_name', '')}"
             unique.setdefault(pkey, parent)
 
@@ -202,7 +225,7 @@ def _get_float_attr(obj, attr: str) -> Optional[float]:
     try:
         if not obj.HasAttribute(attr):
             return None
-    except Exception:
+    except AttributeError:
         return None
 
     try:
@@ -210,10 +233,10 @@ def _get_float_attr(obj, attr: str) -> Optional[float]:
         if v is None:
             return None
         return float(v)
-    except Exception:
+    except AttributeError:
         try:
             return float(getattr(obj, attr))
-        except Exception:
+        except AttributeError:
             return None
 
 
@@ -221,7 +244,7 @@ def safe_set(obj, attr, value, *, verbose: bool = False) -> bool:
     try:
         if not obj.HasAttribute(attr):
             return False
-    except Exception as e:
+    except AttributeError as e:
         if verbose:
             print(f"[WARN] HasAttribute({attr}) failed: {e}")
         return False
@@ -234,14 +257,14 @@ def safe_set(obj, attr, value, *, verbose: bool = False) -> bool:
             try:
                 obj.SetAttribute(attr, [value])
                 return True
-            except Exception:
+            except RuntimeError:
                 pass
         if verbose:
             print(
                 f"[WARN] TypeError SetAttribute({attr}) on {obj.GetClassName()} ({getattr(obj,'loc_name','')}): {e}"
             )
         return False
-    except Exception as e:
+    except AttributeError as e:
         if verbose:
             print(
                 f"[WARN] SetAttribute({attr}) failed on {obj.GetClassName()} ({getattr(obj,'loc_name','')}): {e}"
@@ -252,14 +275,14 @@ def safe_set(obj, attr, value, *, verbose: bool = False) -> bool:
 def _get_loc_name(obj) -> str:
     try:
         return obj.GetAttribute("loc_name")
-    except Exception:
+    except AttributeError:
         return getattr(obj, "loc_name", "")
 
 
 def _set_loc_name_only(obj, new_name: str):
     try:
         return obj.SetAttribute("loc_name", new_name)
-    except Exception:
+    except AttributeError:
         return setattr(obj, "loc_name", new_name)
 
 
@@ -267,15 +290,15 @@ def _get_str_attr(obj, attr: str) -> Optional[str]:
     try:
         if not obj.HasAttribute(attr):
             return None
-    except Exception:
+    except AttributeError:
         return None
 
     try:
         v = obj.GetAttribute(attr)
-    except Exception:
+    except AttributeError:
         try:
             v = getattr(obj, attr)
-        except Exception:
+        except AttributeError:
             return None
 
     if v is None:
@@ -299,12 +322,12 @@ def _get_cim_rdf_id(obj) -> List[str]:
     try:
         if not obj.HasAttribute("cimRdfId"):
             return []
-    except Exception:
+    except AttributeError:
         return []
     try:
         value = obj.GetAttribute("cimRdfId")
         return value or []
-    except Exception:
+    except AttributeError:
         return []
 
 
@@ -315,7 +338,7 @@ def _set_cim_rdf_id(obj, new_id: str) -> bool:
 def _get_full_name(obj) -> str:
     try:
         return obj.GetFullName()
-    except Exception:
+    except AttributeError:
         return f"{obj.GetClassName()}::{_get_loc_name(obj)}"
 
 
@@ -335,7 +358,7 @@ def _search_by_full_name_after(app, full_name_after: str):
     rel = _to_project_relative(full_name_after)
     try:
         return project.SearchObject(rel)
-    except Exception:
+    except AttributeError:
         return None
 
 
@@ -399,12 +422,12 @@ def _make_unique_if_needed(obj, desired: str, anonymizer: SeededNameAnonymizer) 
         if _get_loc_name(obj) == desired:
             return desired
         raise RuntimeError("PF did not apply loc_name")
-    except Exception:
+    except AttributeError:
         try:
             base = _get_full_name(obj)
-        except Exception:
+        except AttributeError:
             base = f"{obj.GetClassName()}::{old}"
-        suffix = anonymizer._hash(base, 6)
+        suffix = anonymizer.get_hash(base, 6)
         candidate = f"{desired}_{suffix}"
         _set_loc_name_only(obj, candidate)
         if _get_loc_name(obj) != candidate:
@@ -595,12 +618,12 @@ def _gps_apply_and_record(
 
     try:
         print(obj.GPScoords)
-    except Exception:
+    except AttributeError:
         pass
 
     try:
         obj.GPScoords = [[0.0, 0.0] for _ in obj.GPScoords]
-    except Exception:
+    except AttributeError:
         pass
 
     if gps_delete:
@@ -889,7 +912,7 @@ def restore_from_mapping(app, mapping_path: Path):
                 if orig:
                     try:
                         obj.SetAttribute("loc_name", orig)
-                    except Exception:
+                    except AttributeError:
                         pass
 
             # restore generic string attributes by checking for prefix
@@ -1027,7 +1050,7 @@ def _activate_project(app, project_name: str):
     for p in prjs:
         try:
             print(" -", p.loc_name)
-        except Exception:
+        except AttributeError:
             pass
 
     raise RuntimeError(f"Could not activate project: {project_name} (rc={rc})")
@@ -1138,10 +1161,10 @@ def run_powerfactory_import_export(
         out_path.parent.mkdir(parents=True, exist_ok=True)
         _export_project_to_pfd(app, out_path)
         print(f"Export written: {out_path}")
-    except Exception as e:
+    except OSError as e:
         print(f"[WARN] Export not executed: {e}")
-
-    print("=== anym_PF.py: Done ===")
+    except RuntimeError as e:
+        print(f"[ERROR] Export failed: {e}")
 
 
 def run_powerfactory_restore(
