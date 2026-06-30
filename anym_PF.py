@@ -412,7 +412,10 @@ def _get_loc_name(obj) -> str:
 
 
 def _set_loc_name_only(obj, new_name: str):
-    obj.SetAttribute("loc_name", new_name)
+    try:
+        return obj.SetAttribute("loc_name", new_name)
+    except Exception:
+        return setattr(obj, "loc_name", new_name)
 
 
 def _get_str_attr(obj, attr: str) -> Optional[str]:
