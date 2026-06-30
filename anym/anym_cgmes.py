@@ -26,6 +26,7 @@ Design rationale
 Depends on: lxml, anym_PF (SeededNameAnonymizer etc.)
 """
 
+# pylint: disable=c-extension-no-member
 from __future__ import annotations
 
 import math
@@ -44,6 +45,7 @@ from utils import (
     _meters_to_deg_lat,
     _meters_to_deg_lon,
     _obj_unit_from_name,
+    _scale_back_to_valid_geo,
     load_mapping_json,
     save_mapping_json,
 )
@@ -121,42 +123,6 @@ def _serialise_xml(tree: etree._ElementTree, path: Path) -> None:
         encoding="utf-8",
         pretty_print=True,
     )
-
-
-def _scale_back_to_valid_geo(
-    old_lat: float,
-    old_lon: float,
-    new_lat: float,
-    new_lon: float,
-) -> Tuple[float, float]:
-    """
-    If the transformed point falls outside the valid geographic range
-    (lat in [-90, 90], lon in [-180, 180]) the shift vector is scaled back
-    uniformly so the result lands just inside the boundary.
-
-    This preserves the direction of the anonymization shift while avoiding
-    unrenderable coordinates.  A 0.1 degree margin keeps points away from
-    the exact poles / antimeridian.
-    """
-    LAT_LIMIT = 89.9
-    LON_LIMIT = 179.9
-
-    dlat = new_lat - old_lat
-    dlon = new_lon - old_lon
-    scale = 1.0
-
-    if dlat > 0 and new_lat > LAT_LIMIT:
-        scale = min(scale, (LAT_LIMIT - old_lat) / dlat)
-    elif dlat < 0 and new_lat < -LAT_LIMIT:
-        scale = min(scale, (-LAT_LIMIT - old_lat) / dlat)
-
-    if dlon > 0 and new_lon > LON_LIMIT:
-        scale = min(scale, (LON_LIMIT - old_lon) / dlon)
-    elif dlon < 0 and new_lon < -LON_LIMIT:
-        scale = min(scale, (-LON_LIMIT - old_lon) / dlon)
-
-    scale = max(0.0, scale)
-    return old_lat + scale * dlat, old_lon + scale * dlon
 
 
 # ---------------------------------------------------------------------------

@@ -1,3 +1,43 @@
+"""
+anym_csv.py - CSV anonymizer
+=============================
+
+Anonymizes (or restores) a single CSV file using the same seed-based
+deterministic token mapping shared with anym_PF / anym_cgmes, driven
+by an external mapping JSON so the same names/IDs stay consistent
+across PowerFactory, CGMES, and CSV exports of the same dataset.
+
+Workflow
+--------
+1. Load an existing mapping JSON if present (so IDs/names already
+   anonymized elsewhere stay consistent), otherwise start a fresh
+   mapping using the given seed.
+2. Auto-detect the CSV dialect (delimiter) via csv.Sniffer.
+3. Anonymize or restore:
+   - one or more "name" columns (auto-detected as
+     "Name Ortsnetzstation", or the first column, unless
+     `columns` is given explicitly) via whole-value token
+     substitution,
+   - a fixed "Schalter mit Fernwirkanschluss" column, if present,
+     where EIN/AUS/NZA status markers are stripped and embedded
+     equipment IDs (matched via `_ID_RE`) are anonymized/restored
+     individually within the free-text value.
+4. Write the transformed CSV, and on anonymize runs, persist the
+   updated mapping JSON (merging into any mapping that already
+   existed).
+
+Notes
+-----
+- "anonymize" mode replaces values and grows the mapping; "restore"
+  mode looks values up by their `ANON_` prefix and reverses them
+  using the mapping's reverse lookup table, leaving unrecognized
+  values untouched.
+- Column matching is whitespace-tolerant, so header variants with
+  extra/missing surrounding spaces still resolve correctly.
+
+Depends on: utils (SeededNameAnonymizer, load_mapping_json).
+"""
+
 import csv
 import json
 import re
@@ -78,6 +118,29 @@ def transform_csv_with_mapping(
     seed: str,
     columns: Optional[List[str]] = None,
 ):
+    """
+    Anonymize or restore a CSV file using a shared mapping JSON.
+
+    Loads an existing mapping (extending it) or starts a new one from
+    `seed`. Translates/restores the configured name column(s) and, if
+    present, anonymizes/restores embedded IDs within the
+    "Schalter mit Fernwirkanschluss" column while stripping status
+    markers. Writes the transformed rows to `csv_out` and, on
+    "anonymize" runs, persists the updated mapping to `mapping_path`.
+
+    Parameters
+    ----------
+    csv_in, csv_out : input/output CSV paths.
+    mapping_path    : mapping JSON to load and (on anonymize) update.
+    mode            : "anonymize" or "restore".
+    seed            : seed used only when creating a new mapping.
+    columns         : explicit column names to anonymize; auto-detected if None.
+
+    Raises
+    ------
+    RuntimeError
+        If the input CSV has no header row.
+    """
     print("=== anym_csv.py: Start Import/Anonymize/Export ===")
 
     # load or create mapping

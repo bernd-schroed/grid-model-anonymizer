@@ -1,4 +1,55 @@
-# anym_PF.py
+# pylint:disable=too-many-lines
+"""
+anym_pf.py - PowerFactory (.pfd) anonymizer
+============================================
+
+Anonymizes a DIgSILENT PowerFactory project (.pfd) in place via the
+PowerFactory Python API, using the same seed-based deterministic
+approach and mapping JSON shared with anym_cgmes / anym_csv.
+
+Workflow
+--------
+1. Locate the installed PowerFactory version and append its Python
+   API path (`<PF install>\\Python\\<major.minor>`) to sys.path before
+   `import powerfactory` is attempted.
+2. Import the source .pfd into a temporary PowerFactory project.
+3. Walk all relevant network objects (elements, types, switches,
+   cubicles, graphics) and:
+   - anonymize loc_name and a fixed set of string attributes
+     (sernum, constr, chr_name, dar_src, manuf, for_name,
+     foreignKey) via deterministic token substitution,
+   - anonymize or delete (`desc=True`) object descriptions,
+   - transform+jitter or delete (`gps=True`) GPS coordinates,
+   - optionally remap CIM RDF identifiers.
+4. Export the anonymized project back out as a .pfd and write a
+   mapping JSON recording every original -> anonymized value, which
+   is later used to fully reverse the process (`run_powerfactory_restore`).
+
+Design rationale
+----------------
+- All renames/attribute writes go through `safe_set` / `_get_*_attr`
+  helpers that tolerate objects which don't support a given attribute
+  (PowerFactory classes are heterogeneous), so a missing attribute on
+  one object type never aborts the whole run.
+- Bulk operations are wrapped in `_pf_bulk_mode_begin/_end` to disable
+  GUI/progress-bar updates and enable the write cache, which is
+  required for acceptable performance on larger projects.
+- GPS anonymization runs as a second pass, after names/cimRdfIds have
+  already been changed, so the mapping can key GPS records by the
+  *original* cimRdfId / full path even though the object itself has
+  since been renamed.
+- Restoring is the import/export workflow run with the mapping JSON
+  applied in reverse: deleted-GPS records are restored first (while
+  identifiers are still resolvable), then loc_name/attributes/desc,
+  then cimRdfId, then transformed-GPS records last.
+
+Requires a local PowerFactory installation (searches
+`C:\\Program Files\\DIgSILENT` and `C:\\Program Files (x86)\\DIgSILENT`)
+and a matching PowerFactory-compatible Python interpreter version;
+exits with an error message at import time if no compatible version
+is found. Depends on: psutil, utils (SeededNameAnonymizer etc.).
+"""
+
 from __future__ import annotations
 
 import hashlib
@@ -17,6 +68,7 @@ from utils import (
     _meters_to_deg_lat,
     _meters_to_deg_lon,
     _obj_unit_from_name,
+    _scale_back_to_valid_geo,
     load_mapping_json,
     save_mapping_json,
 )
@@ -24,12 +76,18 @@ from utils import (
 
 # PowerFactory Python path
 def get_pf_version() -> Path:
-    """To see if current python and PowerFactory are compatible, check which power factory is installed
-    Inputs:
-        None.
+    """
+    Locate the newest installed PowerFactory version.
 
-    Output:
-        Path: The most recent installed PowerFactory version
+    Scans the standard DIgSILENT install directories
+    (Program Files / Program Files (x86)) for "PowerFactory*"
+    subfolders, excluding the License Manager, and returns the path
+    of the highest version found.
+
+    Returns
+    -------
+    Path
+        Install directory of the most recent PowerFactory version.
     """
     # Getting the PowerFactory Version
     search_paths = [
@@ -61,15 +119,12 @@ def get_pf_version() -> Path:
 
 def check_python_pf_compatibility(powerfactory_path: Path, py_version: str) -> None:
     """
-    Checks if PowerFactory and python are compatible. If Not it prints,
-    which python versions would be for this PowerFactory Version.
-    Inputs:
-        powerfactory_path (Path):
-            The location of the used PowerFactory Instance
-        py_version:
-            the used python version as string ("3.11" e.g.)
-    Outputs:
-        None.
+    Verify that the running Python's major.minor version is supported
+    by the detected PowerFactory installation.
+
+    Exits the process with an explanatory message listing the
+    compatible Python versions if py_version is not among the
+    subfolders under "<pf_path>/Python".
     """
     search_path = Path(powerfactory_path, "Python")
     possible_versions = [version.name for version in search_path.iterdir()]
@@ -120,6 +175,18 @@ def _seed_unit(seed: str, tag: str) -> float:
 # PF call wrappers
 # ----------------------------
 def _call_pf_or_app(app, name: str, *args):
+    """
+    Call a method by name on whichever of `pf` or `app` defines it.
+
+    PowerFactory exposes some functions on the `powerfactory` module
+    itself and others on the application object, depending on version;
+    this abstracts over that difference.
+
+    Raises
+    ------
+    AttributeError
+        If neither `pf` nor `app` defines `name`.
+    """
     if hasattr(pf, name):
         return getattr(pf, name)(*args)
     if hasattr(app, name):
@@ -146,7 +213,25 @@ def _pf_bulk_mode_end(app):
 # PF object collection
 # ----------------------------
 class PfObjects:
+    """
+    Collects all network-relevant PowerFactory objects for a project.
+
+    On construction, gathers every object matching a fixed set of class
+    patterns (elements, types, switches, cubicles, graphics, project
+    folders), deletes any CimModel objects found in the active project,
+    and clears (renames to "Deleted") any IntGrf map info objects, since
+    these typically carry no anonymization-relevant data but may leak
+    project metadata.
+    """
+
     def __init__(self, app):
+        """
+        Build the object collection for the given PowerFactory application.
+
+        Parameters
+        ----------
+        app : the PowerFactory application object (from pf.GetApplication()).
+        """
         patterns = [
             "*.IntPrjfolder",
             "*.IntQlim",
@@ -166,10 +251,10 @@ class PfObjects:
                 pass
 
         project = app.GetActiveProject()
-        cimModels = project.GetContents("*.CimModel", 1)
-        for cimModel in cimModels:
+        cim_models = project.GetContents("*.CimMdel", 1)
+        for cim_model in cim_models:
             try:
-                cimModel.Delete()
+                cim_model.Delete()
             except AttributeError:
                 pass
 
@@ -183,10 +268,21 @@ class PfObjects:
                 pass
 
     def iter_all_lists(self):
+        """Yield every collected PF object."""
         yield from self.objects
 
 
 def parent_chain_until_network_data(obj) -> List:
+    """
+    Walk up an object's parent chain, stopping after "Network Data".
+
+    Returns
+    -------
+    List
+        The object plus all ancestors, starting with `obj` itself and
+        ending at the first ancestor named "Network Data" (inclusive),
+        or at the root if "Network Data" is never reached.
+    """
     chain = []
     current = obj
     while current:
@@ -198,6 +294,20 @@ def parent_chain_until_network_data(obj) -> List:
 
 
 def collect_unique_objects_for_anonymization(app) -> List:
+    """
+    Build a deduplicated list of all objects to anonymize, including
+    their parent chains.
+
+    Collects the base object set via PfObjects, then walks each
+    object's parent chain (up to "Network Data") and includes those
+    ancestors as well, deduplicating by full name (falling back to
+    class+loc_name if GetFullName fails).
+
+    Returns
+    -------
+    List
+        Unique PF objects (original objects plus their relevant ancestors).
+    """
     pf_objs = PfObjects(app)
     unique: Dict[str, object] = {}
 
@@ -222,6 +332,12 @@ def collect_unique_objects_for_anonymization(app) -> List:
 # Safe attribute helpers
 # ----------------------------
 def _get_float_attr(obj, attr: str) -> Optional[float]:
+    """
+    Safely read a PF attribute as a float.
+
+    Returns None if the attribute doesn't exist, is unset, or can't be
+    converted to a float (instead of raising).
+    """
     try:
         if not obj.HasAttribute(attr):
             return None
@@ -241,6 +357,19 @@ def _get_float_attr(obj, attr: str) -> Optional[float]:
 
 
 def safe_set(obj, attr, value, *, verbose: bool = False) -> bool:
+    """
+    Safely set a PF attribute, tolerating objects that don't support it.
+
+    Checks HasAttribute first, then attempts SetAttribute; on a
+    TypeError, retries with the value wrapped in a list (PF sometimes
+    expects list-typed values for string attributes). Failures are
+    swallowed and optionally logged via `verbose`.
+
+    Returns
+    -------
+    bool
+        True if the attribute was successfully set, False otherwise.
+    """
     try:
         if not obj.HasAttribute(attr):
             return False
@@ -260,15 +389,13 @@ def safe_set(obj, attr, value, *, verbose: bool = False) -> bool:
             except RuntimeError:
                 pass
         if verbose:
-            print(
-                f"[WARN] TypeError SetAttribute({attr}) on {obj.GetClassName()} ({getattr(obj,'loc_name','')}): {e}"
-            )
+            print(f"""[WARN] TypeError SetAttribute({attr}) on {obj.GetClassName()}
+                ({getattr(obj,'loc_name','')}): {e}""")
         return False
     except AttributeError as e:
         if verbose:
-            print(
-                f"[WARN] SetAttribute({attr}) failed on {obj.GetClassName()} ({getattr(obj,'loc_name','')}): {e}"
-            )
+            print(f"""[WARN] SetAttribute({attr}) failed on {obj.GetClassName()}
+                ({getattr(obj,'loc_name','')}): {e}""")
         return False
 
 
@@ -366,6 +493,12 @@ def _search_by_full_name_after(app, full_name_after: str):
 # Anonymize primitives
 # ----------------------------
 def anonymize_cim_rdf_id(obj, seed: str, anonymizer: SeededNameAnonymizer) -> None:
+    """
+    Deterministically remap an object's cimRdfId and record the mapping.
+
+    No-op if the object has no cimRdfId. Reuses an existing mapping
+    entry if this ID was already remapped.
+    """
     ids = _get_cim_rdf_id(obj)
     if not ids:
         return
@@ -387,6 +520,15 @@ def anonymize_string_fields(
     fields: List[str],
     empty_as_zero: bool = True,
 ):
+    """
+    Anonymize a fixed set of string attributes on a PF object in place.
+
+    For each field in `fields`: skips fields that don't exist; if the
+    value is empty and `empty_as_zero` is True, substitutes a value
+    derived from the object's pid_/oid_ before translating (so empty
+    fields still get a deterministic anonymized value); otherwise
+    leaves genuinely empty fields untouched.
+    """
     for attr in fields:
         old = _get_str_attr(obj, attr)
         if old is None:
@@ -561,29 +703,6 @@ def _desc_restore(desc_value: str, anon_rev: Dict[str, str], prefix: str) -> str
     out = _desc_normalize("".join(out_parts)).strip()
     out = _collapse_semicolons(out)
     return out
-
-
-def _scale_back_to_valid_geo(
-    old_lat: float,
-    old_lon: float,
-    new_lat: float,
-    new_lon: float,
-) -> Tuple[float, float]:
-    LAT_LIMIT = 89.9
-    LON_LIMIT = 179.9
-    dlat = new_lat - old_lat
-    dlon = new_lon - old_lon
-    scale = 1.0
-    if dlat > 0 and new_lat > LAT_LIMIT:
-        scale = min(scale, (LAT_LIMIT - old_lat) / dlat)
-    elif dlat < 0 and new_lat < -LAT_LIMIT:
-        scale = min(scale, (-LAT_LIMIT - old_lat) / dlat)
-    if dlon > 0 and new_lon > LON_LIMIT:
-        scale = min(scale, (LON_LIMIT - old_lon) / dlon)
-    elif dlon < 0 and new_lon < -LON_LIMIT:
-        scale = min(scale, (-LON_LIMIT - old_lon) / dlon)
-    scale = max(0.0, scale)
-    return old_lat + scale * dlat, old_lon + scale * dlon
 
 
 # ----------------------------
@@ -807,7 +926,7 @@ def _build_cim_index(objs: List) -> Dict[str, object]:
 # Restore procedure (UNIFIED)
 # ----------------------------
 
-import re
+import re  # pylint:disable=wrong-import-position, wrong-import-order
 
 _ANON_RE = re.compile(r"\bANON_[0-9A-F]{6,}\b")  # 6+ damit auch längere Hashes gehen
 
@@ -819,6 +938,11 @@ def _collapse_semicolons(s: str) -> str:
 
 
 def restore_anon_tokens_in_text(text: str, anon_rev: Dict[str, str]) -> str:
+    """
+    Replace every ANON_<hash> token found in free text with its
+    original value from `anon_rev`, leaving unrecognized tokens as-is.
+    """
+
     def repl(m: re.Match) -> str:
         tok = m.group(0)
         return anon_rev.get(tok, tok)
@@ -892,7 +1016,7 @@ def restore_from_mapping(app, mapping_path: Path):
     # ---------------------------------------------------------
     # 2) Restore loc_name, attributes, desc, cimRdfId
     # ---------------------------------------------------------
-    FIELDS = [
+    fields = [
         "sernum",
         "constr",
         "chr_name",
@@ -916,7 +1040,7 @@ def restore_from_mapping(app, mapping_path: Path):
                         pass
 
             # restore generic string attributes by checking for prefix
-            for attr in FIELDS:
+            for attr in fields:
                 cur_val = _get_str_attr(obj, attr)
                 if cur_val is None:
                     continue
@@ -1086,6 +1210,7 @@ def _export_project_to_pfd(app, out_path: Path):
 # Process helper
 # ----------------------------
 def kill_powerfactory():
+    """Terminate any running PowerFactory.exe process, if found."""
     for proc in psutil.process_iter(attrs=["pid", "name"]):
         try:
             if proc.info.get("name") and "PowerFactory" in proc.info["name"]:

@@ -1,3 +1,66 @@
+"""
+utils.py - Shared anonymization primitives
+============================================
+
+Common, format-agnostic building blocks used by anym_PF.py, anym_cgmes.py,
+and anym_csv.py: a deterministic seed-based name anonymizer, mapping
+JSON I/O, deterministic UUID generation, and a deterministic GPS
+coordinate transform. Keeping these here ensures that the same input
+value always maps to the same anonymized output across all three
+input formats (PowerFactory, CGMES, CSV), so a given asset's name,
+ID, and location stay consistent regardless of which file it appears in.
+
+Contents
+--------
+- SeededNameAnonymizer
+    Stateful, deterministic string -> "ANON_<hash>" anonymizer. Reuses
+    an existing mapping if a value was already translated, derives new
+    tokens via SHA-256(seed + value), and extends the hash length on
+    collision to guarantee a 1:1 mapping. Holds three related but
+    separate mapping tables: a unified forward/reverse string mapping
+    (`forward`/`reverse`) for names and free-text attributes, a
+    CIM RDF ID mapping (`cim_forward`) for UUID-like identifiers,
+    and a GPS mapping (`gps_mapping`) keyed by an object's original
+    identifier.
+
+- save_mapping_json / load_mapping_json
+    Serialize/deserialize a SeededNameAnonymizer's full state
+    (seed, prefix, hash length, and all three mapping tables) to/from
+    a JSON file, so anonymization can later be reversed. `load_mapping_json`
+    also transparently migrates older mapping files that used the
+    legacy `loc_name_mapping` / `attr_mappings` keys into the current
+    unified `anon_mapping` format.
+
+- _generate_seeded_uuid
+    Deterministically derives a CIM-style UUID (`_xxxxxxxx-xxxx-...`)
+    from an original ID and the seed, for optionally remapping
+    rdf:ID-style identifiers.
+
+- _build_geo_transform
+    Builds a deterministic GPS coordinate transform function from the
+    seed: a rotation + mirror + translation applied in normalized
+    [-1, 1] lat/lon space (to avoid distortion from rotating raw
+    degree coordinates), producing a strong but reversible-via-mapping
+    geographic displacement (e.g. Europe -> Africa/Asia). Used together
+    with `_scale_back_to_valid_geo` (defined locally in each format
+    module) to keep results within valid lat/lon bounds.
+
+- _obj_unit_from_name
+    Deterministic seed+tag+name -> [0, 1) float, used to derive
+    per-object jitter (radius/angle) so nearby objects don't all
+    shift identically.
+
+- _meters_to_deg_lat / _meters_to_deg_lon
+    Small-distance conversion helpers (meters -> degrees) used to
+    apply metric-scale GPS jitter on top of the global transform,
+    accounting for longitude convergence at higher latitudes.
+
+All anonymization in this module is deterministic given the same
+seed and input: re-running anonymization with the same seed always
+reproduces the same anonymized output, and is fully reversible given
+the resulting mapping JSON.
+"""
+
 import hashlib
 import json
 import math
@@ -9,6 +72,8 @@ from typing import Dict, Tuple
 # Anonymizer container (UNIFIED STRING MAPPING)
 # ----------------------------
 class SeededNameAnonymizer:
+    """Unified seeded anonymizer for string values and special mappings."""
+
     def __init__(self, seed: str, prefix: str = "ANON_", length: int = 10):
         self.seed = str(seed)
         self.prefix = prefix
@@ -27,6 +92,13 @@ class SeededNameAnonymizer:
         self.gps_mapping: Dict[str, dict] = {}
 
     def translate_attr(self, attr: str, value: str) -> str:  # type: ignore # pylint:disable=unused-argument
+        """
+        Anonymize an attribute value via the unified string mapping.
+
+        `attr` is accepted for API compatibility but not used to vary the
+        mapping (all attributes share one forward/reverse table).
+        """
+
         # attr is intentionally ignored now (unified mapping)
         old = "" if value is None else str(value)
         return self.translate(old)
@@ -36,9 +108,20 @@ class SeededNameAnonymizer:
         return hashlib.sha256(payload).hexdigest().upper()[:length]
 
     def get_hash(self, text: str, length: int) -> str:
+        """Public wrapper around `_hash` for deriving a deterministic hash of arbitrary text."""
         return self._hash(text, length)
 
     def translate(self, name: str) -> str:
+        """
+        Deterministically anonymize a string, reusing any existing mapping.
+
+        Returns `name` unchanged if it's falsy or already looks like an
+        anonymized token (starts with `prefix`, or is a known anon value).
+        Otherwise derives a new "<prefix><hash>" token, extending the hash
+        length on collision until a unique token is found, and records the
+        mapping for later reversal.
+        """
+
         if not name:
             return name
         if name.startswith(self.prefix):
@@ -52,10 +135,10 @@ class SeededNameAnonymizer:
         token = self._hash(name, self.length)
         new_name = f"{self.prefix}{token}"
 
-        L = self.length
+        l = self.length
         while new_name in self.reverse and self.reverse[new_name] != name:
-            L += 2
-            token = self._hash(name, L)
+            l += 2
+            token = self._hash(name, l)
             new_name = f"{self.prefix}{token}"
 
         self.forward[name] = new_name
@@ -64,6 +147,7 @@ class SeededNameAnonymizer:
 
 
 def save_mapping_json(path: Path, anonymizer: SeededNameAnonymizer):
+    """Serialize anonymizer state to a JSON mapping file."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -171,3 +255,26 @@ def _meters_to_deg_lon(m: float, lat_deg: float) -> float:
     coslat = abs(math.cos(math.radians(lat_deg)))
     coslat = max(0.1, coslat)
     return m / (111_320.0 * coslat)
+
+
+def _scale_back_to_valid_geo(
+    old_lat: float,
+    old_lon: float,
+    new_lat: float,
+    new_lon: float,
+) -> Tuple[float, float]:
+    lat_limit = 89.9
+    lon_limit = 179.9
+    dlat = new_lat - old_lat
+    dlon = new_lon - old_lon
+    scale = 1.0
+    if dlat > 0 and new_lat > lat_limit:
+        scale = min(scale, (lat_limit - old_lat) / dlat)
+    elif dlat < 0 and new_lat < -lat_limit:
+        scale = min(scale, (-lat_limit - old_lat) / dlat)
+    if dlon > 0 and new_lon > lon_limit:
+        scale = min(scale, (lon_limit - old_lon) / dlon)
+    elif dlon < 0 and new_lon < -lon_limit:
+        scale = min(scale, (-lon_limit - old_lon) / dlon)
+    scale = max(0.0, scale)
+    return old_lat + scale * dlat, old_lon + scale * dlon

@@ -206,7 +206,11 @@ def _is_cgmes(path: Path) -> bool:
 
 def main():
     """
-    Main Function to anonymize and reconstruct. Uses argparse for parameters
+    CLI entry point.
+
+    Parses arguments, prints a summary of the resolved paths/mode, then
+    dispatches to the PowerFactory, CGMES, or CSV anonymize/restore
+    backend based on the input file's suffix.
     """
     args = parse_args()
 
