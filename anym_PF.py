@@ -539,6 +539,16 @@ def anonymize_string_fields(
 
 def _make_unique_if_needed(obj, desired: str, anonymizer: SeededNameAnonymizer) -> str:
     old = _get_loc_name(obj)
+    exception_list = [
+        "Library",
+        "Network Model",
+        "Study Cases",
+        "Equipment Type Library",
+        "PowSwitch",
+        "Network Data",
+    ]
+    if old in exception_list:
+        return
     try:
         _set_loc_name_only(obj, desired)
         if _get_loc_name(obj) == desired:
