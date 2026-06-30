@@ -1,4 +1,64 @@
-# main.py
+"""
+main.py
+=======
+
+Command-line entry point for the anonymizer toolkit.
+
+This script provides a single CLI for anonymizing (and reversing the
+anonymization of) PowerFactory, CGMES, and CSV files that describe power
+system network data. Depending on the suffix of ``--input_file``, the
+script dispatches to the matching backend:
+
+    .pfd         -> anym.anym_PF        (PowerFactory project import/export)
+    .zip / .xml  -> anym.anym_cgmes     (CGMES bundle / single CIM/XML file)
+    .csv         -> anym.anym_csv       (plain CSV column anonymization)
+
+In "anonymize" mode (default), the script produces:
+    - an anonymized output file (network names, descriptions, GPS
+      coordinates, and identifiers replaced with deterministic,
+      seed-based pseudonyms), and
+    - a mapping JSON file recording the original -> anonymized value
+      mapping, required to later reverse the process.
+
+In "restore" mode (``--reverse``), the script takes a previously
+anonymized file plus its mapping JSON and reconstructs the original
+file.
+
+Typical usage:
+    python main.py --input_file model.pfd
+    python main.py --input_file model.pfd --no-gps --no-desc
+    python main.py --input_file model_anonym.pfd --reverse \\
+        --mapping_file model_mapping.json
+    python main.py --input_file IEEE39.zip --remap-ids
+    python main.py --input_file remote.csv --csv-columns "Name,Ort"
+
+Key CLI options:
+    --input_file    Required. Path to the .pfd, .zip, .xml, or .csv file
+                     to process.
+    --output_file   Optional. Destination path; auto-derived from the
+                     input filename (e.g. "_anonym" / "_reverse" suffix)
+                     if omitted.
+    --mapping_file  Optional. Path to the mapping JSON; auto-derived
+                     from the input filename if omitted.
+    --seed          Deterministic seed used to generate anonymized
+                     values (anonymize mode only). Default: "timon123".
+    --reverse       Restore the original file from an anonymized file
+                     and its mapping JSON, instead of anonymizing.
+    --no-gps        Delete GPS coordinates (set to 0,0) instead of
+                     applying a coordinate transform + jitter.
+    --no-desc       Replace object descriptions with "Deleted" instead
+                     of anonymizing their contents.
+    --remap-ids     CGMES only. Also remap rdf:ID / rdf:about /
+                     rdf:resource values (off by default, since CGMES
+                     IDs are typically UUIDs with no readable content).
+    --csv-columns   CSV only. Comma-separated list of column names to
+                     anonymize (defaults to "Name Ortsnetzstation" or
+                     the first column).
+
+Run as a script (``python main.py ...``); prints a summary of the
+resolved input/output/mapping paths and the selected mode, then
+reports the total runtime on completion."""
+
 import argparse
 import time
 from pathlib import Path
