@@ -1,5 +1,7 @@
 .vs/*
 .vscode/*
 __pycache__/*
+anym/__pycache__/*
 *.pfd
 *.zip
+*_mapping.json

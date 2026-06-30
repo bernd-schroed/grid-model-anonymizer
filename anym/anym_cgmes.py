@@ -38,7 +38,7 @@ from typing import Dict, List, Optional, Set, Tuple
 
 from lxml import etree
 
-from anym_PF import (
+from anym.anym_PF import (
     SeededNameAnonymizer,
     _build_geo_transform,
     _generate_seeded_uuid,
