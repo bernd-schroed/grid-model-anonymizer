@@ -116,8 +116,8 @@ def parse_args():
 
     parser.add_argument(
         "--verbosity",
-        dest="desc",
-        action="store_false",
+        dest="verbosity",
+        action="store_true",
         help="Enable verbose logging (DEBUG level)",
     )
     parser.add_argument(
@@ -230,7 +230,6 @@ def main():
     backend based on the input file's suffix.
     """
     args = parse_args()
-    print(args.verbosity)
     try:
         _set_output_verbosity(args.verbosity)
     except AttributeError:
