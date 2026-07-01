@@ -118,7 +118,7 @@ def parse_args():
         "--verbosity",
         dest="desc",
         action="store_false",
-        help="Replace descriptions with 'Deleted' instead of anonymizing them",
+        help="Enable verbose logging (DEBUG level)",
     )
     parser.add_argument(
         "--output_file",
@@ -141,12 +141,6 @@ def parse_args():
         "--reverse",
         action="store_true",
         help="Restore / reverse anonymization instead of anonymizing",
-    )
-
-    parser.add_argument(
-        "--verbose-output",
-        action="store_true",
-        help="Enable verbose logging (DEBUG level)",
     )
 
     # --- PowerFactory / CGMES flags ---
@@ -236,9 +230,9 @@ def main():
     backend based on the input file's suffix.
     """
     args = parse_args()
-    print(args.verbose_output)
+    print(args.verbosity)
     try:
-        _set_output_verbosity(args.verbose_output)
+        _set_output_verbosity(args.verbosity)
     except AttributeError:
         # argparse doesn't set this attribute if the flag is omitted
         _set_output_verbosity(False)
