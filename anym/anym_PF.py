@@ -115,9 +115,11 @@ def get_pf_version() -> Path:
         for version, path in versions.items()
         if "LicenceManager".lower() not in version.lower()
     }
-
-    _, last_path = sorted(versions.items())[-1]
-    return Path(last_path)
+    if not versions:
+        return False
+    else:
+        _, last_path = sorted(versions.items())[-1]
+        return Path(last_path)
 
 
 def check_python_pf_compatibility(powerfactory_path: Path, py_version: str) -> None:
@@ -132,7 +134,7 @@ def check_python_pf_compatibility(powerfactory_path: Path, py_version: str) -> N
     search_path = Path(powerfactory_path, "Python")
     possible_versions = [version.name for version in search_path.iterdir()]
     if not any(version == py_version for version in possible_versions):
-        exit(
+        raise RuntimeError(
             f"""\nError: This Python Version {py_version} is not compatible with the current 
             version of PowerFactory. Try one of the following Python versions instead: 
             {possible_versions}.\n"""
@@ -140,21 +142,23 @@ def check_python_pf_compatibility(powerfactory_path: Path, py_version: str) -> N
 
 
 pf_path = get_pf_version()
+if pf_path is False:
+    pf = None  # pylint:disable=invalid-name
+    logger.warning("No PowerFactory installation found in standard locations.")
+else:
+    # set python version
+    python_major_version = sys.version_info.major
+    python_minor_version = sys.version_info.minor
+    PY_VERSION = f"{str(python_major_version)}.{str(python_minor_version)}"
 
-# set python version
-python_major_version = sys.version_info.major
-python_minor_version = sys.version_info.minor
-PY_VERSION = f"{str(python_major_version)}.{str(python_minor_version)}"
+    check_python_pf_compatibility(pf_path, PY_VERSION)
 
+    # PowerFactory Python path
+    pf_python_path = Path(pf_path, "Python", PY_VERSION)
 
-check_python_pf_compatibility(pf_path, PY_VERSION)
+    sys.path.append(str(pf_python_path))
 
-# PowerFactory Python path
-pf_python_path = Path(pf_path, "Python", PY_VERSION)
-
-sys.path.append(str(pf_python_path))
-
-import powerfactory as pf  # type: ignore # pylint: disable=import-error,wrong-import-position,wrong-import-order
+    import powerfactory as pf  # type: ignore # pylint: disable=import-error,wrong-import-position,wrong-import-order
 
 
 # ----------------------------
@@ -190,6 +194,7 @@ def _call_pf_or_app(app, name: str, *args):
     AttributeError
         If neither `pf` nor `app` defines `name`.
     """
+
     if hasattr(pf, name):
         return getattr(pf, name)(*args)
     if hasattr(app, name):
@@ -1255,6 +1260,10 @@ def run_powerfactory_import_export(
     gps=True  -> delete GPS (0/0) + JSON stores old + cim_after + full_name_after
     gps=False -> transform+jitter + JSON stores old/new
     """
+    if pf is None:
+        logger.error("PowerFactory Python API not available. Cannot run.")
+        raise RuntimeError("PowerFactory Python API not available.")
+
     in_path = Path(in_path)
     out_path = Path(out_path)
     mapping_out_path = Path(mapping_out_path)
@@ -1317,6 +1326,11 @@ def run_powerfactory_restore(
     """
     Import PFD -> restore from JSON -> export PFD
     """
+    if pf is None:
+        logger.error(
+            "PowerFactory Python API not available (pf is None). Cannot restore."
+        )
+        raise RuntimeError("PowerFactory Python API not available.")
     logger.info("=== anym_PF.py: Start Reverse ===")
     in_path = Path(in_path)
     out_path = Path(out_path)
