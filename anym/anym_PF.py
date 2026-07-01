@@ -829,6 +829,7 @@ def anonymize_objects(
                 full.endswith(".IntPrj")
                 or full.endswith(".IntCase")
                 or full.endswith(".IntUser")
+                or full.startswith(r"\Lib.IntLibrary")
             ):
                 continue
 
