@@ -386,7 +386,7 @@ def safe_set(obj, attr, value, *, verbose: bool = False) -> bool:
             try:
                 obj.SetAttribute(attr, [value])
                 return True
-            except RuntimeError:
+            except TypeError:
                 pass
         if verbose:
             print(f"""[WARN] TypeError SetAttribute({attr}) on {obj.GetClassName()}
