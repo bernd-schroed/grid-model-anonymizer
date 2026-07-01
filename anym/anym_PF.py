@@ -53,6 +53,7 @@ is found. Depends on: psutil, utils (SeededNameAnonymizer etc.).
 from __future__ import annotations
 
 import hashlib
+import logging
 import math
 import os
 import sys
@@ -72,6 +73,8 @@ from utils import (
     load_mapping_json,
     save_mapping_json,
 )
+
+logger = logging.getLogger(" anym_pf.py")
 
 
 # PowerFactory Python path
@@ -375,7 +378,7 @@ def safe_set(obj, attr, value, *, verbose: bool = False) -> bool:
             return False
     except AttributeError as e:
         if verbose:
-            print(f"[WARN] HasAttribute({attr}) failed: {e}")
+            logger.warning("HasAttribute(%s) failed: %s", attr, e)
         return False
 
     try:
@@ -389,13 +392,23 @@ def safe_set(obj, attr, value, *, verbose: bool = False) -> bool:
             except TypeError:
                 pass
         if verbose:
-            print(f"""[WARN] TypeError SetAttribute({attr}) on {obj.GetClassName()}
-                ({getattr(obj,'loc_name','')}): {e}""")
+            logger.warning(
+                "TypeError SetAttribute(%s) on %s (%s): %s",
+                attr,
+                obj.GetClassName(),
+                getattr(obj, "loc_name", ""),
+                e,
+            )
         return False
     except AttributeError as e:
         if verbose:
-            print(f"""[WARN] SetAttribute({attr}) failed on {obj.GetClassName()}
-                ({getattr(obj,'loc_name','')}): {e}""")
+            logger.warning(
+                "SetAttribute(%s) failed on %s (%s): %s",
+                attr,
+                obj.GetClassName(),
+                getattr(obj, "loc_name", ""),
+                e,
+            )
         return False
 
 
@@ -573,8 +586,11 @@ def _make_unique_if_needed(obj, desired: str, anonymizer: SeededNameAnonymizer) 
         candidate = f"{desired}_{suffix}"
         _set_loc_name_only(obj, candidate)
         if _get_loc_name(obj) != candidate:
-            print(
-                f"Rename failed: {old} -> {desired} (candidate {candidate} not applied)"
+            logger.warning(
+                "Rename failed: %s -> %s (candidate %s not applied)",
+                old,
+                desired,
+                candidate,
             )
         return candidate
 
@@ -736,7 +752,7 @@ def _gps_apply_and_record(
         return
 
     try:
-        print(obj.GPScoords)
+        logger.debug("GPS coordinates: %s", obj.GPScoords)
     except AttributeError:
         pass
 
@@ -1006,7 +1022,7 @@ def restore_from_mapping(app, mapping_path: Path):
                     target = _search_by_full_name_after(app, fn)
 
             if target is None:
-                print(f"[WARN] deleted-GPS target not found (orig_cim={orig_cim})")
+                logger.warning("Deleted-GPS target not found (orig_cim=%s)", orig_cim)
                 continue
 
             safe_set(target, "GPSlat", old_lat, verbose=False)
@@ -1156,7 +1172,7 @@ def _activate_project(app, project_name: str):
         alt_name = project_name[:-7]  # remove "_anonym"
         rc2 = app.ActivateProject(alt_name)
         if rc2 == 0:
-            print(f"[INFO] Project name corrected to: {alt_name}")
+            logger.info("[INFO] Project name corrected to: %s", alt_name)
             return app.GetActiveProject()
 
     user = app.GetCurrentUser()
@@ -1171,10 +1187,10 @@ def _activate_project(app, project_name: str):
                 p.Activate()
                 return app.GetActiveProject()
 
-    print("Available projects:")
+    logger.info("Available projects:")
     for p in prjs:
         try:
-            print(" -", p.loc_name)
+            logger.info(" - %s", p.loc_name)
         except AttributeError:
             pass
 
@@ -1216,7 +1232,7 @@ def kill_powerfactory():
         try:
             if proc.info.get("name") and "PowerFactory" in proc.info["name"]:
                 proc.kill()
-                print("PowerFactory terminated.")
+                logger.info("PowerFactory terminated.")
                 return
         except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
             pass
@@ -1252,7 +1268,7 @@ def run_powerfactory_import_export(
         )
 
     app.ClearOutputWindow()
-    print("=== anym_PF.py: Start Import/Anonymize/Export ===")
+    logger.info("=== anym_PF.py: Start Import/Anonymize/Export ===")
 
     if not in_path.exists():
         raise FileNotFoundError(f"Input PFD not found: {in_path}")
@@ -1268,7 +1284,7 @@ def run_powerfactory_import_export(
         gridtocim.AssignCimRdfIds()
 
     objects = collect_unique_objects_for_anonymization(app)
-    print(f"Objects to anonymize (unique): {len(objects)}")
+    logger.info("Objects to anonymize (unique): %d", len(objects))
 
     anonymizer = anonymize_objects(
         app=app,
@@ -1281,16 +1297,16 @@ def run_powerfactory_import_export(
     )
 
     save_mapping_json(mapping_out_path, anonymizer)
-    print(f"Mapping saved: {mapping_out_path}")
+    logger.info("Mapping saved: %s", mapping_out_path)
 
     try:
         out_path.parent.mkdir(parents=True, exist_ok=True)
         _export_project_to_pfd(app, out_path)
-        print(f"Export written: {out_path}")
+        logger.info("Export written: %s", out_path)
     except OSError as e:
-        print(f"[WARN] Export not executed: {e}")
+        logger.warning("Export not executed: %s", e)
     except RuntimeError as e:
-        print(f"[ERROR] Export failed: {e}")
+        logger.error("Export failed: %s", e)
 
 
 def run_powerfactory_restore(
@@ -1301,7 +1317,7 @@ def run_powerfactory_restore(
     """
     Import PFD -> restore from JSON -> export PFD
     """
-    print("=== anym_PF.py: Start Reverse ===")
+    logger.info("=== anym_PF.py: Start Reverse ===")
     in_path = Path(in_path)
     out_path = Path(out_path)
     mapping_path = Path(mapping_path)
@@ -1327,4 +1343,4 @@ def run_powerfactory_restore(
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     _export_project_to_pfd(app, out_path)
-    print("=== anym_PF.py: End Reverse ===")
+    logger.info("=== anym_PF.py: End Reverse ===")

@@ -60,12 +60,16 @@ resolved input/output/mapping paths and the selected mode, then
 reports the total runtime on completion."""
 
 import argparse
+import logging
+import sys
 import time
 from pathlib import Path
 
 from anym.anym_cgmes import anonymize_cgmes, restore_cgmes
 from anym.anym_csv import transform_csv_with_mapping
 from anym.anym_PF import run_powerfactory_import_export, run_powerfactory_restore
+
+logger = logging.getLogger(" Main.py")
 
 
 def parse_args():
@@ -111,6 +115,12 @@ def parse_args():
     )
 
     parser.add_argument(
+        "--verbosity",
+        dest="desc",
+        action="store_false",
+        help="Replace descriptions with 'Deleted' instead of anonymizing them",
+    )
+    parser.add_argument(
         "--output_file",
         type=Path,
         default=None,
@@ -131,6 +141,12 @@ def parse_args():
         "--reverse",
         action="store_true",
         help="Restore / reverse anonymization instead of anonymizing",
+    )
+
+    parser.add_argument(
+        "--verbose-output",
+        action="store_true",
+        help="Enable verbose logging (DEBUG level)",
     )
 
     # --- PowerFactory / CGMES flags ---
@@ -204,6 +220,13 @@ def _is_cgmes(path: Path) -> bool:
     return path.suffix.lower() in (".zip", ".xml")
 
 
+def _set_output_verbosity(verbose: bool):
+    if verbose:
+        logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
+    else:
+        logging.basicConfig(stream=sys.stdout, level=logging.INFO)
+
+
 def main():
     """
     CLI entry point.
@@ -213,19 +236,27 @@ def main():
     backend based on the input file's suffix.
     """
     args = parse_args()
+    print(args.verbose_output)
+    try:
+        _set_output_verbosity(args.verbose_output)
+    except AttributeError:
+        # argparse doesn't set this attribute if the flag is omitted
+        _set_output_verbosity(False)
 
-    print("input_file  :", args.input_file)
-    print("output_file :", args.output_file)
-    print("mapping_file:", args.mapping_file)
-    print("mode        :", "restore" if args.reverse else "anonymize")
+    logger.info("Starting anonymizer toolkit...")
+
+    logger.debug("input_file  :%s", args.input_file)
+    logger.debug("output_file :%s", args.output_file)
+    logger.debug("mapping_file:%s", args.mapping_file)
+    logger.debug("mode        :%s", "restore" if args.reverse else "anonymize")
 
     suf = args.input_file.suffix.lower()
 
     # ------------------------------------------------------------------ PFD
     if suf == ".pfd":
-        print("seed:", args.seed)
-        print("desc (True=delete):", args.desc)
-        print("gps  (True=delete):", args.gps)
+        logger.debug("seed        :%s", args.seed)
+        logger.debug("desc (True=delete):%s", args.desc)
+        logger.debug("gps  (True=delete):%s", args.gps)
 
         if args.reverse:
             run_powerfactory_restore(
@@ -245,9 +276,9 @@ def main():
 
     # ----------------------------------------------------------------- CGMES
     elif _is_cgmes(args.input_file):
-        print("seed:", args.seed)
-        print("desc (True=delete):", args.desc)
-        print("gps  (True=delete):", args.gps)
+        logger.debug("seed        :%s", args.seed)
+        logger.debug("desc (True=delete):%s", args.desc)
+        logger.debug("gps  (True=delete):%s", args.gps)
 
         if args.reverse:
             restore_cgmes(
@@ -282,13 +313,13 @@ def main():
         )
 
     else:
-        print("File type not supported yet.")
+        logger.error("File type not supported yet.")
 
 
 if __name__ == "__main__":
     start = time.time()
     main()
-    print(f"Duration: {time.time() - start:.2f} s")
+    logger.info(str(f"Duration: {time.time() - start:.2f} s"))
 
 
 # ---------------------------------------------------------------------------

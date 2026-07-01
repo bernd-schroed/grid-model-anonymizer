@@ -29,6 +29,7 @@ Depends on: lxml, anym_PF (SeededNameAnonymizer etc.)
 # pylint: disable=c-extension-no-member
 from __future__ import annotations
 
+import logging
 import math
 import shutil
 import tempfile
@@ -49,6 +50,8 @@ from utils import (
     load_mapping_json,
     save_mapping_json,
 )
+
+logger = logging.getLogger("anym_cgmes.py")
 
 # ---------------------------------------------------------------------------
 # RDF namespace
@@ -274,7 +277,9 @@ def _anonymize_tree(
             parent_id=key,
         )
     if skipped:
-        print(f"  [WARN] {skipped} GPS bucket(s) incomplete (x or y missing) – skipped")
+        logger.warning(
+            "   %d GPS bucket(s) incomplete (x or y missing) – skipped", skipped
+        )
 
     # ------------------------------------------------------------------
     # Step 2: text fields
@@ -522,7 +527,7 @@ def anonymize_cgmes(
     out_path = Path(out_path)
     mapping_out_path = Path(mapping_out_path)
 
-    print("=== anym_cgmes.py: Start Anonymize ===")
+    logger.info("=== anym_cgmes.py: Start Anonymize ===")
 
     anonymizer = SeededNameAnonymizer(seed=seed, prefix=prefix, length=hash_length)
     gps_transform = _build_geo_transform(seed)
@@ -530,17 +535,19 @@ def anonymize_cgmes(
     with tempfile.TemporaryDirectory() as tmp_str:
         tmp_dir = Path(tmp_str)
         xml_files = _extract_bundle(in_path, tmp_dir)
-        print(f"  Found {len(xml_files)} XML file(s): {[r for r, _ in xml_files]}")
+        logger.info(
+            "  Found %d XML file(s): %s", len(xml_files), [r for r, _ in xml_files]
+        )
 
         trees: List[Tuple[str, Path, etree._ElementTree]] = []
         for rel, path in xml_files:
             try:
                 trees.append((rel, path, _parse_xml(path)))
             except etree.XMLSyntaxError as exc:
-                print(f"  [WARN] Skipping {rel}: {exc}")
+                logger.warning("  Skipping %s: %s", rel, exc)
 
         for rel, path, tree in trees:
-            print(f"  Processing {rel} ...")
+            logger.debug("  Processing %s ...", rel)
             _anonymize_tree(
                 tree,
                 seed=seed,
@@ -556,12 +563,12 @@ def anonymize_cgmes(
         _pack_bundle([(rel, path) for rel, path, _ in trees], out_path)
 
     save_mapping_json(mapping_out_path, anonymizer)
-    print(f"  Mapping saved   : {mapping_out_path}")
-    print(f"  Output          : {out_path}")
-    print(f"  Names anonymized: {len(anonymizer.forward)}")
-    print(f"  rdf:IDs remapped: {len(anonymizer.cim_forward)}")
-    print(f"  GPS entries     : {len(anonymizer.gps_mapping)}")
-    print("=== anym_cgmes.py: Done ===")
+    logger.info("  Mapping saved   : %s", mapping_out_path)
+    logger.info("  Output          : %s", out_path)
+    logger.info("  Names anonymized: %d", len(anonymizer.forward))
+    logger.info("  rdf:IDs remapped: %d", len(anonymizer.cim_forward))
+    logger.info("  GPS entries     : %d", len(anonymizer.gps_mapping))
+    logger.info("=== anym_cgmes.py: Done ===")
 
 
 # ---------------------------------------------------------------------------
@@ -587,7 +594,7 @@ def restore_cgmes(
     out_path = Path(out_path)
     mapping_path = Path(mapping_path)
 
-    print("=== anym_cgmes.py: Start Restore ===")
+    logger.info("=== anym_cgmes.py: Start Restore ===")
 
     data = load_mapping_json(mapping_path)
     prefix: str = str(data.get("prefix", "ANON_") or "ANON_")
@@ -600,17 +607,19 @@ def restore_cgmes(
     with tempfile.TemporaryDirectory() as tmp_str:
         tmp_dir = Path(tmp_str)
         xml_files = _extract_bundle(in_path, tmp_dir)
-        print(f"  Found {len(xml_files)} XML file(s)")
+        logger.info(
+            "  Found %d XML file(s): %s", len(xml_files), [r for r, _ in xml_files]
+        )
 
         trees: List[Tuple[str, Path, etree._ElementTree]] = []
         for rel, path in xml_files:
             try:
                 trees.append((rel, path, _parse_xml(path)))
             except etree.XMLSyntaxError as exc:
-                print(f"  [WARN] Skipping {rel}: {exc}")
+                logger.warning("  Skipping %s: %s", rel, exc)
 
         for rel, path, tree in trees:
-            print(f"  Restoring {rel} ...")
+            logger.info("  Restoring %s ...", rel)
             _restore_tree(
                 tree,
                 anon_rev=anon_rev,
@@ -623,5 +632,5 @@ def restore_cgmes(
         out_path.parent.mkdir(parents=True, exist_ok=True)
         _pack_bundle([(rel, path) for rel, path, _ in trees], out_path)
 
-    print(f"  Output: {out_path}")
-    print("=== anym_cgmes.py: Restore Done ===")
+    logger.info("  Output: %s", out_path)
+    logger.info("=== anym_cgmes.py: Restore Done ===")
