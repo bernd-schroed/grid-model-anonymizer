@@ -183,7 +183,15 @@ def parse_args():
             "'Name Ortsnetzstation' or first column.",
         ),
     )
-
+    # --- JSON Options ---
+    parser.add_argument(
+        "--json-categories",
+        type=str,
+        default=None,
+        help=str(
+            "JSON Category names to anonymize. Default: all categroies.",
+        ),
+    )
     args = parser.parse_args()
 
     suf = args.input_file.suffix.lower()
@@ -197,8 +205,10 @@ def parse_args():
             suffix = "_reverse.pfd" if args.reverse else "_anonym.pfd"
         elif suf in (".zip", ".xml"):
             suffix = "_reverse.zip" if args.reverse else "_anonym.zip"
-        else:
+        elif suf in (".csv"):
             suffix = "_reverse.csv" if args.reverse else "_anonym.csv"
+        else:
+            suffix = "_reverse.json" if args.reverse else "_anonym.json"
         args.output_file = args.input_file.with_name(stem + suffix)
 
     # --- Auto-derive mapping file ---
@@ -220,6 +230,10 @@ def _set_output_verbosity(verbose: bool):
         logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
     else:
         logging.basicConfig(stream=sys.stdout, level=logging.INFO)
+
+
+def _split_columns_and_categories(input_str: str) -> list[str]:
+    return [c.strip() for c in input_str.split(",") if c.strip()]
 
 
 def main():
@@ -295,7 +309,7 @@ def main():
     elif suf == ".csv":
         cols = None
         if args.csv_columns:
-            cols = [c.strip() for c in args.csv_columns.split(",") if c.strip()]
+            cols = _split_columns_and_categories(args.csv_columns)
 
         transform_csv_with_mapping(
             csv_in=args.input_file,
@@ -307,11 +321,17 @@ def main():
         )
 
     elif suf == ".json":
+        if args.json_categories:
+            categories = _split_columns_and_categories(args.json_categories)
+        else:
+            categories = None
+
         anonymize_json_file(
             input_json=args.input_file,
             output_json=args.output_file,
             mapping_output=args.mapping_file,
             seed=args.seed,
+            categories=categories,
         )
     else:
         logger.error("File type not supported yet.")
