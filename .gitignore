@@ -4,4 +4,5 @@ __pycache__/*
 anym/__pycache__/*
 *.pfd
 *.zip
-*_mapping.json
+*.json
+*.csv
