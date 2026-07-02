@@ -3,7 +3,7 @@ import logging
 from pathlib import Path
 from typing import List, Optional
 
-from utils import SeededNameAnonymizer, load_mapping_json
+from utils import SeededNameAnonymizer, save_mapping_json
 
 logger = logging.getLogger("anym_json.py")
 
@@ -41,11 +41,67 @@ def load_json_file(file_path: str):
         raise
 
 
+def save_json_file(data, file_path: str):
+    """
+    Save a Python object as a JSON file.
+
+    Parameters
+    ----------
+    data : dict or list
+        The Python object to be saved as JSON.
+    file_path : str
+        The path where the JSON file will be saved.
+
+    Raises
+    ------
+    IOError
+        If there is an error writing to the file.
+    """
+    try:
+        with open(file_path, "w", encoding="utf-8") as file:
+            json.dump(data, file, ensure_ascii=False, indent=4)
+    except IOError as e:
+        logger.error("Error writing to file '%s': %s", file_path, e)
+        raise
+
+
+def anonymize_json_data(
+    input_json: str,
+    anonymizer: SeededNameAnonymizer,
+    categories: Optional[List[str]] = None,
+):
+
+    for entry in input_json:
+        for category in categories:
+            if category in entry:
+                original_value = entry[category]
+                anonymized_value = anonymizer.translate(original_value)
+                entry[category] = anonymized_value
+
+    return input_json
+
+
+def _get_json_keys(data: dict) -> List[str]:
+    all_keys = set()
+
+    # Über alle Einträge in der Liste iterieren
+    for entry in data:
+        if isinstance(
+            entry, dict
+        ):  # Sicherstellen, dass es sich um ein Dictionary handelt
+            all_keys.update(entry.keys())
+
+        # Das Set in eine sortierte Liste umwandeln (für bessere Lesbarkeit)
+        unique_keys_list = sorted(list(all_keys))
+    return unique_keys_list
+
+
 def anonymize_json_file(
     input_json: str,
     output_json: str,
     mapping_output: Path,
     seed: str,
+    categories: Optional[List[str]] = None,
 ):
     """
     Anonymize the content of a JSON file and save the result to another file.
@@ -60,8 +116,8 @@ def anonymize_json_file(
         The path where the mapping file for anonymization will be saved.
     seed : str
         The seed for reproducible anonymization.
-    columns : Optional[List[str]]
-        The list of columns to anonymize.
+    categories : Optional[List[str]]
+        The list of categories to anonymize.
 
     Raises
     ------
@@ -72,7 +128,13 @@ def anonymize_json_file(
     """
     data = load_json_file(input_json)
 
-    # anonymizer = SeededNameAnonymizer(seed=seed, prefix="ANON_", length=10)
+    if categories:
+        prefered_categories = categories
+    else:
+        prefered_categories = _get_json_keys(data)
+    anonymizer = SeededNameAnonymizer(seed=seed, prefix="ANON_", length=10)
 
-    # with open(output_json, "w", encoding="utf-8") as file:
-    #     json.dump(anonymized_data, file, ensure_ascii=False, indent=4)
+    anonymized_data = anonymize_json_data(data, anonymizer, prefered_categories)
+
+    save_mapping_json(mapping_output, anonymizer)
+    save_json_file(anonymized_data, output_json)
