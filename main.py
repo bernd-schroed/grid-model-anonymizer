@@ -67,6 +67,7 @@ from pathlib import Path
 
 from anym.anym_cgmes import anonymize_cgmes, restore_cgmes
 from anym.anym_csv import transform_csv_with_mapping
+from anym.anym_json import anonymize_json_file
 from anym.anym_PF import run_powerfactory_import_export, run_powerfactory_restore
 
 logger = logging.getLogger(" Main.py")
@@ -186,8 +187,8 @@ def parse_args():
     args = parser.parse_args()
 
     suf = args.input_file.suffix.lower()
-    if suf not in (".pfd", ".csv", ".zip", ".xml"):
-        raise ValueError("Input must be a .pfd, .zip, .xml, or .csv file")
+    if suf not in (".pfd", ".csv", ".zip", ".xml", ".json"):
+        raise ValueError("Input must be a .pfd, .zip, .xml, or .json file")
 
     # --- Auto-derive output file ---
     if args.output_file is None:
@@ -305,6 +306,13 @@ def main():
             columns=cols,
         )
 
+    elif suf == ".json":
+        anonymize_json_file(
+            input_json=args.input_file,
+            output_json=args.output_file,
+            mapping_output=args.mapping_file,
+            seed=args.seed,
+        )
     else:
         logger.error("File type not supported yet.")
 
