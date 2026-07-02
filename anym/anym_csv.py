@@ -40,11 +40,14 @@ Depends on: utils (SeededNameAnonymizer, load_mapping_json).
 
 import csv
 import json
+import logging
 import re
 from pathlib import Path
 from typing import Dict, List, Optional
 
 from utils import SeededNameAnonymizer, load_mapping_json
+
+logger = logging.getLogger("anym_csv.py")
 
 _STATUS_RE = re.compile(
     r"\s*\(\s*(?:EIN|AUS|NZA)\s*(?:,\s*(?:EIN|AUS|NZA)\s*)?\)\s*",
@@ -141,7 +144,7 @@ def transform_csv_with_mapping(
     RuntimeError
         If the input CSV has no header row.
     """
-    print("=== anym_csv.py: Start Import/Anonymize/Export ===")
+    logger.info("=== anym_csv.py: Start Import/Anonymize/Export ===")
 
     # load or create mapping
     mapping_path = Path(mapping_path)
@@ -244,4 +247,4 @@ def transform_csv_with_mapping(
             json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
         )
 
-    print("=== anym_csv.py: End ===")
+    logger.info("=== anym_csv.py: End ===")
