@@ -67,7 +67,7 @@ from pathlib import Path
 
 from anym.anym_cgmes import anonymize_cgmes, restore_cgmes
 from anym.anym_csv import transform_csv_with_mapping
-from anym.anym_json import anonymize_json_file
+from anym.anym_json import anonymize_json_file, restore_json_anonymization
 from anym.anym_PF import run_powerfactory_import_export, run_powerfactory_restore
 
 logger = logging.getLogger(" Main.py")
@@ -326,13 +326,20 @@ def main():
         else:
             categories = None
 
-        anonymize_json_file(
-            input_json=args.input_file,
-            output_json=args.output_file,
-            mapping_output=args.mapping_file,
-            seed=args.seed,
-            categories=categories,
-        )
+        if args.reverse:
+            restore_json_anonymization(
+                input_json=args.input_file,
+                output_json=args.output_file,
+                mapping_input=args.mapping_file,
+            )
+        else:
+            anonymize_json_file(
+                input_json=args.input_file,
+                output_json=args.output_file,
+                mapping_output=args.mapping_file,
+                seed=args.seed,
+                categories=categories,
+            )
     else:
         logger.error("File type not supported yet.")
 

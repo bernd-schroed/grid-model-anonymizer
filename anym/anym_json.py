@@ -3,7 +3,7 @@ import logging
 from pathlib import Path
 from typing import List, Optional
 
-from utils import SeededNameAnonymizer, save_mapping_json
+from utils import SeededNameAnonymizer, load_mapping_json, save_mapping_json
 
 logger = logging.getLogger("anym_json.py")
 
@@ -66,11 +66,27 @@ def save_json_file(data, file_path: str):
 
 
 def anonymize_json_data(
-    input_json: str,
+    input_json: list,
     anonymizer: SeededNameAnonymizer,
     categories: Optional[List[str]] = None,
 ):
+    """
+    Anonymize the content of a JSON object based on specified categories.
 
+    Parameters
+    ----------
+    input_json : dict or list
+        The Python object to be anonymized.
+    anonymizer : SeededNameAnonymizer
+        The anonymizer to use for anonymizing the data.
+    categories : Optional[List[str]]
+        The list of categories to anonymize.
+
+    Returns
+    -------
+    dict or list
+        The anonymized JSON object.
+    """
     for entry in input_json:
         for category in categories:
             if category in entry:
@@ -138,3 +154,44 @@ def anonymize_json_file(
 
     save_mapping_json(mapping_output, anonymizer)
     save_json_file(anonymized_data, output_json)
+
+
+def restore_json_anonymization(
+    input_json: str,
+    output_json: str,
+    mapping_input: Path,
+):
+    """
+    Reconstruct the original content of an anonymized JSON file using a mapping.
+
+    Parameters
+    ----------
+    input_json : str
+        The path to the anonymized JSON file.
+    output_json : str
+        The path where the reconstructed JSON will be saved.
+    mapping_input : Path
+        The path to the mapping file used for reconstruction.
+    categories : Optional[List[str]]
+        The list of categories to reconstruct.
+
+    Raises
+    ------
+    FileNotFoundError
+        If the input file or mapping file does not exist.
+    json.JSONDecodeError
+        If the input file is not a valid JSON.
+    """
+    data = load_json_file(input_json)
+    mapping_data = load_mapping_json(mapping_input)
+
+    prefix = str(mapping_data.get("prefix", "ANON_") or "ANON_")
+
+    for element in data:
+        if isinstance(element, dict):
+            for key, value in element.items():
+                if isinstance(value, str) and value.startswith(prefix):
+                    original_value = mapping_data["anon_mapping"].get(value)
+                    if original_value:
+                        element[key] = original_value
+    save_json_file(data, output_json)
