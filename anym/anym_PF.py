@@ -814,6 +814,52 @@ def _gps_apply_and_record(
     safe_set(obj, "GPSlon", float(new_lon), verbose=False)
 
 
+def set_line_length(
+    obj,
+):
+    obj_name = _get_loc_name(obj)
+    new_name = obj_name + "LineType"
+    old_len = _get_float_attr(obj, "dline")
+    if old_len is None:
+        return
+    if old_len == 1 or old_len == 0:
+        return
+    ln_type = obj.GetType()
+
+    r_per_km = _get_float_attr(ln_type, "rline")
+    x_per_km = _get_float_attr(ln_type, "xline")
+    r0_per_km = _get_float_attr(ln_type, "r0line")
+    x0_per_km = _get_float_attr(ln_type, "x0line")
+    new_type = create_new_line_type(ln_type, new_name)
+
+    new_r = r_per_km * old_len if r_per_km is not None else None
+    new_x = x_per_km * old_len if x_per_km is not None else None
+    new_r0 = r0_per_km * old_len if r0_per_km is not None else None
+    new_x0 = x0_per_km * old_len if x0_per_km is not None else None
+
+    if new_r is not None:
+        safe_set(new_type, "rline", float(new_r), verbose=False)
+    if new_x is not None:
+        safe_set(new_type, "xline", float(new_x), verbose=False)
+    if new_r0 is not None:
+        safe_set(new_type, "r0line", float(new_r0), verbose=False)
+    if new_x0 is not None:
+        safe_set(new_type, "x0line", float(new_x0), verbose=False)
+
+    safe_set(obj, "dline", float(1), verbose=False)
+    safe_set(obj, "typ_id", new_type, verbose=False)
+    return
+
+    # TODO: Add the old length and old LnType to Mapping
+    # TODO: reset length with mapping
+
+
+def create_new_line_type(old_type, new_name):
+    parent = old_type.GetParent()
+    new_type = parent.AddCopy(old_type, new_name)
+    return new_type
+
+
 # ----------------------------
 # Full anonymize procedure
 # ----------------------------
@@ -928,6 +974,9 @@ def anonymize_objects(
                 anonymizer=anonymizer,
                 orig_cim_id=orig_cim,
                 orig_loc_name_for_jitter=orig_loc,
+            )
+            set_line_length(
+                obj,
             )
     finally:
         _pf_bulk_mode_end(app)
