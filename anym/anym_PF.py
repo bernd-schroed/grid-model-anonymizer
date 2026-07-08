@@ -826,25 +826,14 @@ def set_line_length(
         return
     ln_type = obj.GetType()
 
-    r_per_km = _get_float_attr(ln_type, "rline")
-    x_per_km = _get_float_attr(ln_type, "xline")
-    r0_per_km = _get_float_attr(ln_type, "r0line")
-    x0_per_km = _get_float_attr(ln_type, "x0line")
+    impedance_types = ["rline", "xline", "rline0", "xline0"]
     new_type = create_new_line_type(ln_type, new_name)
 
-    new_r = r_per_km * old_len if r_per_km is not None else None
-    new_x = x_per_km * old_len if x_per_km is not None else None
-    new_r0 = r0_per_km * old_len if r0_per_km is not None else None
-    new_x0 = x0_per_km * old_len if x0_per_km is not None else None
-
-    if new_r is not None:
-        safe_set(new_type, "rline", float(new_r), verbose=False)
-    if new_x is not None:
-        safe_set(new_type, "xline", float(new_x), verbose=False)
-    if new_r0 is not None:
-        safe_set(new_type, "r0line", float(new_r0), verbose=False)
-    if new_x0 is not None:
-        safe_set(new_type, "x0line", float(new_x0), verbose=False)
+    for impedance_type in impedance_types:
+        impedance_value_per_km = _get_float_attr(ln_type, impedance_type)
+        if impedance_value_per_km is not None:
+            new_impedance = impedance_value_per_km * old_len
+            safe_set(new_type, "rline", float(new_impedance), verbose=False)
 
     safe_set(obj, "dline", float(1), verbose=False)
     safe_set(obj, "typ_id", new_type, verbose=False)
