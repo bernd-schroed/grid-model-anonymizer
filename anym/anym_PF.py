@@ -814,9 +814,7 @@ def _gps_apply_and_record(
     safe_set(obj, "GPSlon", float(new_lon), verbose=False)
 
 
-def set_line_length(
-    obj,
-):
+def set_line_length(obj, anonymizer: SeededNameAnonymizer):
     obj_name = _get_loc_name(obj)
     new_name = obj_name + "LineType"
     old_len = _get_float_attr(obj, "dline")
@@ -824,7 +822,9 @@ def set_line_length(
         return
     if old_len == 1 or old_len == 0:
         return
+
     ln_type = obj.GetType()
+    ln_name = _get_loc_name(ln_type)
 
     impedance_types = ["rline", "xline", "rline0", "xline0"]
     new_type = create_new_line_type(ln_type, new_name)
@@ -835,11 +835,11 @@ def set_line_length(
             new_impedance = impedance_value_per_km * old_len
             safe_set(new_type, impedance_type, float(new_impedance), verbose=False)
 
+    anonymizer.line_mapping[ln_name] = new_name
+
     safe_set(obj, "dline", float(1), verbose=False)
     safe_set(obj, "typ_id", new_type, verbose=False)
-    return
 
-    # TODO: Add the old length and old LnType to Mapping
     # TODO: reset length with mapping
 
 
@@ -964,9 +964,7 @@ def anonymize_objects(
                 orig_cim_id=orig_cim,
                 orig_loc_name_for_jitter=orig_loc,
             )
-            set_line_length(
-                obj,
-            )
+            set_line_length(obj, anonymizer=anonymizer)
     finally:
         _pf_bulk_mode_end(app)
 

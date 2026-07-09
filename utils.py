@@ -91,6 +91,9 @@ class SeededNameAnonymizer:
         # gps mapping keyed by ORIGINAL cimRdfId (before change)
         self.gps_mapping: Dict[str, dict] = {}
 
+        # mapping which line was used before to restore original length and impedance values
+        self.line_mapping: Dict[str, str] = {}
+
     def translate_attr(self, attr: str, value: str) -> str:  # type: ignore # pylint:disable=unused-argument
         """
         Anonymize an attribute value via the unified string mapping.
@@ -157,6 +160,7 @@ def save_mapping_json(path: Path, anonymizer: SeededNameAnonymizer):
         "length": anonymizer.length,
         # unified mapping for all ANON_* strings
         "anon_mapping": anonymizer.forward,
+        "line_mapping": anonymizer.line_mapping,
         # keep separate
         "cimRdfId_mapping": anonymizer.cim_forward,
         "gps_mapping": anonymizer.gps_mapping,
