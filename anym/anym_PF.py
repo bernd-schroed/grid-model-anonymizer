@@ -833,7 +833,7 @@ def set_line_length(
         impedance_value_per_km = _get_float_attr(ln_type, impedance_type)
         if impedance_value_per_km is not None:
             new_impedance = impedance_value_per_km * old_len
-            safe_set(new_type, "rline", float(new_impedance), verbose=False)
+            safe_set(new_type, impedance_type, float(new_impedance), verbose=False)
 
     safe_set(obj, "dline", float(1), verbose=False)
     safe_set(obj, "typ_id", new_type, verbose=False)
