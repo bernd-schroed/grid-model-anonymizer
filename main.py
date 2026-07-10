@@ -223,11 +223,16 @@ def _is_cgmes(path: Path) -> bool:
     return path.suffix.lower() in (".zip", ".xml")
 
 
-def _set_output_verbosity(verbose: bool):
+def _set_output_verbosity(verbose: bool, log_file: Path):
     if verbose:
-        logging.basicConfig(level=logging.DEBUG)
+        level = logging.DEBUG
     else:
-        logging.basicConfig(level=logging.INFO)
+        level = logging.INFO
+
+    if log_file is None:
+        logging.basicConfig(level=level, stream=sys.stdout)
+    else:
+        logging.basicConfig(level=level, filename=log_file, encoding="utf-8")
 
 
 def main():
@@ -239,16 +244,12 @@ def main():
     backend based on the input file's suffix.
     """
     args = parse_args()
-    try:
-        logging.basicConfig(filename=args.log_file, encoding="utf-8")
-    except AttributeError:
-        logging.basicConfig(stream=sys.stdout)
 
     try:
-        _set_output_verbosity(args.verbose)
+        _set_output_verbosity(args.verbose, args.log_file)
     except AttributeError:
         # argparse doesn't set this attribute if the flag is omitted
-        _set_output_verbosity(False)
+        _set_output_verbosity(False, args.log_file)
 
     logger.info("Starting anonymizer toolkit...")
 
