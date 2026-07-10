@@ -50,6 +50,8 @@ exits with an error message at import time if no compatible version
 is found. Depends on: psutil, utils (SeededNameAnonymizer etc.).
 """
 
+# TODO: Fix that the orig names of the line types are not reset!
+# fix that the old GPS coordinates are not reset
 from __future__ import annotations
 
 import hashlib
@@ -341,7 +343,9 @@ def make_obj_dict(objects: List):
 
     for obj in objects:
         obj_name = _get_loc_name(obj)
-        objects_dict[obj_name] = obj
+        obj_class = obj.GetClassName()
+        obj_key = obj_name + "." + obj_class
+        objects_dict[obj_key] = obj
     return objects_dict
 
 
@@ -857,8 +861,6 @@ def set_line_length(obj, anonymizer: SeededNameAnonymizer):
     safe_set(obj, "dline", float(1), verbose=False)
     safe_set(obj, "typ_id", new_type, verbose=False)
 
-    # TODO: reset length with mapping
-
 
 def create_new_line_type(old_type, new_name):
     parent = old_type.GetParent()
@@ -1061,7 +1063,7 @@ def restore_gps(app, gps_map, cim_index_current, cim_map):
 
 def get_all_line_types(objects_dict):
     for obj_key, obj in objects_dict.items():
-        if obj_key.endswith("LineType"):
+        if obj_key.endswith("LineType.TypLne"):
             type_library = obj.GetParent()
             all_types = type_library.GetChildren(1)
             all_types_dict = make_obj_dict(all_types)
@@ -1074,16 +1076,18 @@ def restore_line_type(objects_dict, line_rev):
 
     for ln_type_key, ln_type_obj in all_types.items():
 
-        if ln_type_key.endswith("LineType"):
+        if ln_type_key.endswith("LineType.TypLne"):
 
-            line_name = ln_type_key[:15]
-            logger.debug("line Name: %s", line_name)
-            orig_type_name = line_rev[ln_type_key]
-            logger.debug("type_name: %s", orig_type_name)
-            line_obj = objects_dict[line_name]
-            orig_type_obj = all_types[orig_type_name]
+            anon_line_name = ln_type_key[:15]
 
-            # first check if its a line type and reset it
+            line_rev_key = ln_type_key[:23]
+            orig_type_name = line_rev[line_rev_key]
+
+            anon_line_key = anon_line_name + ".ElmLne"
+            line_obj = objects_dict[anon_line_key]
+
+            orig_type_key = orig_type_name + ".TypLne"
+            orig_type_obj = all_types[orig_type_key]
 
             anon_r = _get_float_attr(ln_type_obj, "rline")
             orig_r = _get_float_attr(orig_type_obj, "rline")
@@ -1119,7 +1123,7 @@ def restore_from_mapping(app, mapping_path: Path):
 
     objects = collect_unique_objects_for_anonymization(app)
     # ---------------------------------------------------------
-    # 1) Restore GPS for deleted=true BEFORE renaming anything
+    # 1) Restore GPS for deleted=true BEFORE renaming anything and reset lines
     # ---------------------------------------------------------
     cim_index_current = _build_cim_index(objects)
 
@@ -1131,20 +1135,11 @@ def restore_from_mapping(app, mapping_path: Path):
             cim_index_current=cim_index_current,
             cim_map=cim_map,
         )
-    finally:
-        _pf_bulk_mode_end(app)
-
-    # ---------------------------------------------------------
-    # 2) Restore line_types
-    # ---------------------------------------------------------
-
-    _pf_bulk_mode_begin(app)
-    try:
         obj_dict = make_obj_dict(objects)
         restore_line_type(obj_dict, line_rev)
-
     finally:
         _pf_bulk_mode_end(app)
+
 
     # ---------------------------------------------------------
     # 3) Restore loc_name, attributes, desc, cimRdfId
