@@ -336,6 +336,15 @@ def collect_unique_objects_for_anonymization(app) -> List:
     return list(unique.values())
 
 
+def make_obj_dict(objects: List):
+    objects_dict: Dict[str, object] = {}
+
+    for obj in objects:
+        obj_name = _get_loc_name(obj)
+        objects_dict[obj_name] = obj
+    return objects_dict
+
+
 # ----------------------------
 # Safe attribute helpers
 # ----------------------------
