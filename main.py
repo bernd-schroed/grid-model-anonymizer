@@ -70,6 +70,7 @@ from anym.anym_csv import transform_csv_with_mapping
 from anym.anym_PF import run_powerfactory_import_export, run_powerfactory_restore
 
 logger = logging.getLogger(" Main.py")
+# logging.basicConfig(filename="logger.log", encoding="utf-8", level=logging.DEBUG)
 
 
 def parse_args():
@@ -120,6 +121,14 @@ def parse_args():
         action="store_true",
         help="Enable verbose logging (DEBUG level)",
     )
+
+    parser.add_argument(
+        "--log_file",
+        type=Path,
+        action=None,
+        help="Output file for the logging output (printed to cmd line if omitted)",
+    )
+
     parser.add_argument(
         "--output_file",
         type=Path,
@@ -216,9 +225,9 @@ def _is_cgmes(path: Path) -> bool:
 
 def _set_output_verbosity(verbose: bool):
     if verbose:
-        logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
+        logging.basicConfig(level=logging.DEBUG)
     else:
-        logging.basicConfig(stream=sys.stdout, level=logging.INFO)
+        logging.basicConfig(level=logging.INFO)
 
 
 def main():
@@ -230,6 +239,11 @@ def main():
     backend based on the input file's suffix.
     """
     args = parse_args()
+    try:
+        logging.basicConfig(filename=args.log_file, encoding="utf-8")
+    except AttributeError:
+        logging.basicConfig(stream=sys.stdout)
+
     try:
         _set_output_verbosity(args.verbose)
     except AttributeError:
