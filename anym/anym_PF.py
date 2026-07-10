@@ -814,6 +814,19 @@ def _gps_apply_and_record(
     safe_set(obj, "GPSlon", float(new_lon), verbose=False)
 
 
+def set_impedances(old_type, new_type, ratio):
+
+    impedance_types = ["rline", "xline", "rline0", "xline0"]
+
+    for impedance_type in impedance_types:
+        impedance_value_per_km = _get_float_attr(old_type, impedance_type)
+        if impedance_value_per_km is not None:
+            new_impedance_per_km = impedance_value_per_km * ratio
+            safe_set(
+                new_type, impedance_type, float(new_impedance_per_km), verbose=False
+            )
+
+
 def set_line_length(obj, anonymizer: SeededNameAnonymizer):
     obj_name = _get_loc_name(obj)
     new_name = obj_name + "LineType"
@@ -825,15 +838,10 @@ def set_line_length(obj, anonymizer: SeededNameAnonymizer):
 
     ln_type = obj.GetType()
     ln_name = _get_loc_name(ln_type)
-
-    impedance_types = ["rline", "xline", "rline0", "xline0"]
     new_type = create_new_line_type(ln_type, new_name)
 
-    for impedance_type in impedance_types:
-        impedance_value_per_km = _get_float_attr(ln_type, impedance_type)
-        if impedance_value_per_km is not None:
-            new_impedance = impedance_value_per_km * old_len
-            safe_set(new_type, impedance_type, float(new_impedance), verbose=False)
+    impedance_ratio = old_len
+    set_impedances(ln_type, new_type, impedance_ratio)
 
     anonymizer.line_mapping[ln_name] = new_name
 
