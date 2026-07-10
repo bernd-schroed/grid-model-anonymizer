@@ -1025,6 +1025,75 @@ def restore_anon_tokens_in_text(text: str, anon_rev: Dict[str, str]) -> str:
     return _ANON_RE.sub(repl, text)
 
 
+def restore_gps(app, gps_map, cim_index_current, cim_map):
+    for orig_cim, rec in gps_map.items():
+        if not rec.get("deleted", False):
+            continue
+
+        old = rec.get("old")
+        if not (isinstance(old, list) and len(old) == 2):
+            continue
+        old_lat, old_lon = float(old[0]), float(old[1])
+
+        target = None
+
+        cim_after = rec.get("cim_after")
+        if isinstance(cim_after, str) and cim_after:
+            target = cim_index_current.get(cim_after)
+
+        if target is None:
+            current_cim = cim_map.get(orig_cim)
+            if isinstance(current_cim, str) and current_cim:
+                target = cim_index_current.get(current_cim)
+
+        if target is None:
+            fn = rec.get("full_name_after")
+            if isinstance(fn, str) and fn:
+                target = _search_by_full_name_after(app, fn)
+
+        if target is None:
+            logger.warning("Deleted-GPS target not found (orig_cim=%s)", orig_cim)
+            continue
+
+        safe_set(target, "GPSlat", old_lat, verbose=False)
+        safe_set(target, "GPSlon", old_lon, verbose=False)
+
+
+def get_all_line_types(objects_dict):
+    for obj_key, obj in objects_dict.items():
+        if obj_key.endswith("LineType"):
+            type_library = obj.GetParent()
+            all_types = type_library.GetChildren(1)
+            all_types_dict = make_obj_dict(all_types)
+            return all_types_dict
+
+
+def restore_line_type(objects_dict, line_rev):
+
+    all_types = get_all_line_types(objects_dict)
+
+    for ln_type_key, ln_type_obj in all_types.items():
+
+        if ln_type_key.endswith("LineType"):
+
+            line_name = ln_type_key[:15]
+            logger.debug("line Name: %s", line_name)
+            orig_type_name = line_rev[ln_type_key]
+            logger.debug("type_name: %s", orig_type_name)
+            line_obj = objects_dict[line_name]
+            orig_type_obj = all_types[orig_type_name]
+
+            # first check if its a line type and reset it
+
+            anon_r = _get_float_attr(ln_type_obj, "rline")
+            orig_r = _get_float_attr(orig_type_obj, "rline")
+
+            orig_length = anon_r / orig_r
+
+            safe_set(line_obj, "dline", float(orig_length), verbose=False)
+            safe_set(line_obj, "typ_id", orig_type_obj, verbose=False)
+
+
 def restore_from_mapping(app, mapping_path: Path):
     """
     Restore inside an already imported project using the mapping JSON:
@@ -1034,6 +1103,9 @@ def restore_from_mapping(app, mapping_path: Path):
     - Restore GPS for transformed cases AFTER cim restore
     """
     data = load_mapping_json(mapping_path)
+
+    line_map: Dict[str, str] = data.get("line_mapping", {}) or {}  # original -> anon
+    line_rev: Dict[str, str] = {v: k for k, v in line_map.items()}  # anon -> original
 
     anon_map: Dict[str, str] = data.get("anon_mapping", {}) or {}  # original -> anon
     anon_rev: Dict[str, str] = {v: k for k, v in anon_map.items()}  # anon -> original
@@ -1046,7 +1118,6 @@ def restore_from_mapping(app, mapping_path: Path):
     prefix = data.get("prefix", "ANON_") or "ANON_"
 
     objects = collect_unique_objects_for_anonymization(app)
-
     # ---------------------------------------------------------
     # 1) Restore GPS for deleted=true BEFORE renaming anything
     # ---------------------------------------------------------
@@ -1054,42 +1125,29 @@ def restore_from_mapping(app, mapping_path: Path):
 
     _pf_bulk_mode_begin(app)
     try:
-        for orig_cim, rec in gps_map.items():
-            if not rec.get("deleted", False):
-                continue
-
-            old = rec.get("old")
-            if not (isinstance(old, list) and len(old) == 2):
-                continue
-            old_lat, old_lon = float(old[0]), float(old[1])
-
-            target = None
-
-            cim_after = rec.get("cim_after")
-            if isinstance(cim_after, str) and cim_after:
-                target = cim_index_current.get(cim_after)
-
-            if target is None:
-                current_cim = cim_map.get(orig_cim)
-                if isinstance(current_cim, str) and current_cim:
-                    target = cim_index_current.get(current_cim)
-
-            if target is None:
-                fn = rec.get("full_name_after")
-                if isinstance(fn, str) and fn:
-                    target = _search_by_full_name_after(app, fn)
-
-            if target is None:
-                logger.warning("Deleted-GPS target not found (orig_cim=%s)", orig_cim)
-                continue
-
-            safe_set(target, "GPSlat", old_lat, verbose=False)
-            safe_set(target, "GPSlon", old_lon, verbose=False)
+        restore_gps(
+            app=app,
+            gps_map=gps_map,
+            cim_index_current=cim_index_current,
+            cim_map=cim_map,
+        )
     finally:
         _pf_bulk_mode_end(app)
 
     # ---------------------------------------------------------
-    # 2) Restore loc_name, attributes, desc, cimRdfId
+    # 2) Restore line_types
+    # ---------------------------------------------------------
+
+    _pf_bulk_mode_begin(app)
+    try:
+        obj_dict = make_obj_dict(objects)
+        restore_line_type(obj_dict, line_rev)
+
+    finally:
+        _pf_bulk_mode_end(app)
+
+    # ---------------------------------------------------------
+    # 3) Restore loc_name, attributes, desc, cimRdfId
     # ---------------------------------------------------------
     fields = [
         "sernum",
