@@ -115,8 +115,8 @@ def parse_args():
     )
 
     parser.add_argument(
-        "--verbosity",
-        dest="verbosity",
+        "--verbose",
+        dest="verbose",
         action="store_true",
         help="Enable verbose logging (DEBUG level)",
     )
@@ -231,7 +231,7 @@ def main():
     """
     args = parse_args()
     try:
-        _set_output_verbosity(args.verbosity)
+        _set_output_verbosity(args.verbose)
     except AttributeError:
         # argparse doesn't set this attribute if the flag is omitted
         _set_output_verbosity(False)
