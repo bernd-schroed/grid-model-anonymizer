@@ -1096,6 +1096,7 @@ def restore_line_type(objects_dict, line_rev):
 
             safe_set(line_obj, "dline", float(orig_length), verbose=False)
             safe_set(line_obj, "typ_id", orig_type_obj, verbose=False)
+            ln_type_obj.Delete()
 
 
 def restore_from_mapping(app, mapping_path: Path):
@@ -1140,9 +1141,8 @@ def restore_from_mapping(app, mapping_path: Path):
     finally:
         _pf_bulk_mode_end(app)
 
-
     # ---------------------------------------------------------
-    # 3) Restore loc_name, attributes, desc, cimRdfId
+    # 2) Restore loc_name, attributes, desc, cimRdfId
     # ---------------------------------------------------------
     fields = [
         "sernum",
@@ -1153,6 +1153,7 @@ def restore_from_mapping(app, mapping_path: Path):
         "for_name",
         "foreignKey",
     ]
+    objects = collect_unique_objects_for_anonymization(app)
 
     _pf_bulk_mode_begin(app)
     try:
