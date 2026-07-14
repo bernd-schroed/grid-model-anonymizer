@@ -1,3 +1,45 @@
+"""
+anym_json.py - JSON anonymizer
+=============================
+
+Anonymizes (or restores) a JSON file (a list of dict-like entries) using
+the same seed-based deterministic token mapping shared with anym_PF /
+anym_cgmes / anym_csv, driven by an external mapping JSON so the same
+names/IDs stay consistent across exports of the same dataset.
+
+Workflow
+--------
+1. Load the input JSON file (expected: a list of dict entries).
+2. Determine which keys ("categories") to anonymize:
+   - use the explicitly given `categories` list, or
+   - if none is given, auto-detect all keys occurring anywhere across
+     the entries (via `_get_json_keys`).
+3. Anonymize: for every entry, replace the value of each present
+   category key with a deterministic, seed-based token via
+   SeededNameAnonymizer.
+4. Write the transformed JSON to the output path, and persist the
+   generated mapping JSON.
+5. Restore: reverse the process using a previously saved mapping -
+   any string value starting with the mapping's prefix (`ANON_` by
+   default) is looked up and replaced with its original value,
+   regardless of which key it appears under.
+
+Notes
+-----
+- "anonymize" mode replaces values and grows the mapping; "restore"
+  mode looks values up by their `ANON_` prefix and reverses them
+  using the mapping's reverse lookup table, leaving unrecognized
+  values untouched.
+- Only string values are touched; other types (numbers, booleans,
+  nested objects/lists) are left as-is.
+- Auto-detecting categories (step 2, no `categories` given) is
+  convenient for unknown JSON structures but anonymizes every key
+  found in the data - pass an explicit `categories` list to limit
+  anonymization to specific fields.
+
+Depends on: utils (SeededNameAnonymizer, load_mapping_json, save_mapping_json).
+"""
+
 import json
 import logging
 from pathlib import Path
