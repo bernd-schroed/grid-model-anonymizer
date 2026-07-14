@@ -336,6 +336,33 @@ def collect_unique_objects_for_anonymization(app) -> List:
     return list(unique.values())
 
 
+def make_obj_dict(objects: List) -> Dict[str, object]:
+    """
+    Create a Dictionary from a list of objects with a clear key
+    to search make searching for certain objects easier
+
+    Parameters
+    ----------
+    objects: List
+        The object list
+
+    Returns
+    -------
+    objects_dict: Dict
+        The object list as a dictionary
+    """
+    objects_dict: Dict[str, object] = {}
+
+    for obj in objects:
+        # since one loc_name can be given to multiple loc names
+        # the obj_class is added to the key
+        obj_name = _get_loc_name(obj)
+        obj_class = obj.GetClassName()
+        obj_key = obj_name + "." + obj_class
+        objects_dict[obj_key] = obj
+    return objects_dict
+
+
 # ----------------------------
 # Safe attribute helpers
 # ----------------------------
@@ -814,6 +841,91 @@ def _gps_apply_and_record(
     safe_set(obj, "GPSlon", float(new_lon), verbose=False)
 
 
+def set_impedances(old_type: object, new_type: object, ratio: float) -> None:
+    """
+    For power line type resetting, set the new impedances for that line
+
+    Parameters
+    ----------
+    old_type, new_type : the line type objects with the the old impedance and the new
+    ratio              : the ratio between their impedances
+    """
+    impedance_types = [
+        "rline",
+        "xline",
+        "rline0",
+        "xline0",
+    ]  # do the 0 impedances actually need to be reset
+
+    for impedance_type in impedance_types:
+        impedance_value_per_km = _get_float_attr(old_type, impedance_type)
+        if impedance_value_per_km is not None:
+            new_impedance_per_km = impedance_value_per_km * ratio
+            safe_set(
+                new_type, impedance_type, float(new_impedance_per_km), verbose=False
+            )
+
+
+def set_line_length(obj: object, anonymizer: SeededNameAnonymizer) -> None:
+    """
+    reset the line lengths and the new line type and storing it in the anonymizer
+    for the mapping
+
+    Parameters
+    ----------
+    obj: Line object
+        the line object (not the line type object)
+    anonymizer: SeededNameAnonymizer
+        the used anonymizer object
+    """
+
+    # check if the object is a power line and actually needs length resetting
+    obj_name = _get_loc_name(obj)
+    new_name = obj_name + "LineType"
+    old_len = _get_float_attr(obj, "dline")
+    if old_len is None:
+        return
+    if old_len == 1 or old_len == 0:
+        return
+
+    # create the new line type from old one
+    ln_type = obj.GetType()
+    ln_name = _get_loc_name(ln_type)
+    new_type = create_new_line_type(ln_type, new_name)
+
+    # reset the impedance, since the new line length is always 1 km the ratio = old length
+    impedance_ratio = old_len / 1
+    set_impedances(ln_type, new_type, impedance_ratio)
+
+    # save the new line in the anonymizer
+    anonymizer.line_mapping[ln_name] = new_name
+
+    # reset the line data
+    safe_set(obj, "dline", float(1), verbose=False)
+    safe_set(obj, "typ_id", new_type, verbose=False)
+
+
+def create_new_line_type(old_type, new_name: str):
+    """
+    create a new line type object as a copy of the old line type
+
+    Parameters
+    ----------
+    old_type : line type object
+        The old line type
+    new_name : string
+        The name of the new line type object
+
+    Returns
+    -------
+    new_type : line type object
+        The new line type
+    """
+    parent = old_type.GetParent()
+    new_type = parent.AddCopy(old_type, new_name)
+    return new_type
+
+
 # ----------------------------
 # Full anonymize procedure
 # ----------------------------
@@ -929,6 +1041,7 @@ def anonymize_objects(
                 orig_cim_id=orig_cim,
                 orig_loc_name_for_jitter=orig_loc,
             )
+            set_line_length(obj, anonymizer=anonymizer)
     finally:
         _pf_bulk_mode_end(app)
 
@@ -972,6 +1085,138 @@ def restore_anon_tokens_in_text(text: str, anon_rev: Dict[str, str]) -> str:
     return _ANON_RE.sub(repl, text)
 
 
+def restore_gps(
+    app,
+    gps_map: Dict[str, Dict],
+    cim_index_current: Dict[str, object],
+    cim_map: Dict[str, str],
+) -> None:
+    """
+    The restoration of the gps data in a function. This represents
+    the first iteration of the gps restoration, that handles
+
+    Parameters
+    app: PowerFactory Application
+
+    gps_map: Dict[str, Dict]
+        The mapping of the gps data. The key is the cim reference and
+        data is a dictionary with old and new gps coordinates
+    cim_index_current: Dict[str, object]
+        The Cim References corresponding to each object.
+    cim_map: Dict[str, str]
+        The cim mapping with the old and new cim reference
+    """
+    for orig_cim, rec in gps_map.items():
+        if not rec.get("deleted", False):
+            continue
+
+        old = rec.get("old")
+        if not (isinstance(old, list) and len(old) == 2):
+            continue
+        old_lat, old_lon = float(old[0]), float(old[1])
+
+        target = None
+
+        cim_after = rec.get("cim_after")
+        if isinstance(cim_after, str) and cim_after:
+            target = cim_index_current.get(cim_after)
+
+        if target is None:
+            current_cim = cim_map.get(orig_cim)
+            if isinstance(current_cim, str) and current_cim:
+                target = cim_index_current.get(current_cim)
+
+        if target is None:
+            fn = rec.get("full_name_after")
+            if isinstance(fn, str) and fn:
+                target = _search_by_full_name_after(app, fn)
+
+        if target is None:
+            logger.warning("Deleted-GPS target not found (orig_cim=%s)", orig_cim)
+            continue
+
+        safe_set(target, "GPSlat", old_lat, verbose=False)
+        safe_set(target, "GPSlon", old_lon, verbose=False)
+
+
+def get_all_line_types(objects_dict: Dict[str, object]) -> Dict[str, object]:
+    """
+    Since power Factory only gives the line types, that are currently used in a
+    project, this function combines all the unused and used types to a new line type dictionary.
+
+    Parameters
+    ----------
+    objects_dict: Dict[str, object]
+        The objects dictionary with every used object
+
+    Returns
+    -------
+    all_types_dict: Dict[str, object]
+        A Dictionary that contains all the line type objects used and unused
+    """
+    for obj_key, obj in objects_dict.items():
+        # only one instance of "TypLne" is necessary, since we can find all the other "TypLne"
+        # with the "GetParent" and "GetChildren" command.
+        if obj_key.endswith("LineType.TypLne"):
+            type_library = obj.GetParent()
+            all_types = type_library.GetChildren(1)
+            all_types_dict = make_obj_dict(all_types)
+            return all_types_dict
+
+    raise AttributeError(
+        "The current project does not use any '.TypLne' ",
+        "Objects. Line Type restoring is not possible",
+    )
+
+
+def restore_line_type(
+    objects_dict: Dict[str, object], line_rev: Dict[str, str]
+) -> None:
+    """
+    Restoring all old line types, line lengths and impedances
+
+    Parameters
+    ----------
+    objects_dict: Dict[str, object]
+        The dictionary with all objects and a clear key
+    line_rev:  Dict[str, str]
+        The reverse mapping with all the new anonymious linetype names as key
+        and old lines as data
+    """
+
+    all_types = get_all_line_types(objects_dict)
+
+    for ln_type_key, ln_type_obj in all_types.items():
+
+        if ln_type_key.endswith("LineType.TypLne"):
+
+            # get all the data about the line and line type
+            anon_line_name = ln_type_key[:15]
+
+            line_rev_key = ln_type_key[:23]
+            orig_type_name = line_rev[line_rev_key]
+
+            anon_line_key = anon_line_name + ".ElmLne"
+            line_obj = objects_dict[anon_line_key]
+
+            orig_type_key = orig_type_name + ".TypLne"
+            orig_type_obj = all_types[orig_type_key]
+
+            # get the ratio of the impedances
+            # this correspponds to the original line length
+            anon_r = _get_float_attr(ln_type_obj, "rline")
+            orig_r = _get_float_attr(orig_type_obj, "rline")
+
+            orig_length = anon_r / orig_r
+
+            # reset the line information
+            safe_set(line_obj, "dline", float(orig_length), verbose=False)
+            safe_set(line_obj, "typ_id", orig_type_obj, verbose=False)
+
+            # delete the anon now unused line object
+            ln_type_obj.Delete()
+
+
 def restore_from_mapping(app, mapping_path: Path):
     """
     Restore inside an already imported project using the mapping JSON:
@@ -981,6 +1226,9 @@ def restore_from_mapping(app, mapping_path: Path):
     - Restore GPS for transformed cases AFTER cim restore
     """
     data = load_mapping_json(mapping_path)
+
+    line_map: Dict[str, str] = data.get("line_mapping", {}) or {}  # original -> anon
+    line_rev: Dict[str, str] = {v: k for k, v in line_map.items()}  # anon -> original
 
     anon_map: Dict[str, str] = data.get("anon_mapping", {}) or {}  # original -> anon
     anon_rev: Dict[str, str] = {v: k for k, v in anon_map.items()}  # anon -> original
@@ -993,45 +1241,21 @@ def restore_from_mapping(app, mapping_path: Path):
     prefix = data.get("prefix", "ANON_") or "ANON_"
 
     objects = collect_unique_objects_for_anonymization(app)
-
     # ---------------------------------------------------------
-    # 1) Restore GPS for deleted=true BEFORE renaming anything
+    # 1) Restore GPS for deleted=true BEFORE renaming anything and reset lines
     # ---------------------------------------------------------
     cim_index_current = _build_cim_index(objects)
 
     _pf_bulk_mode_begin(app)
     try:
-        for orig_cim, rec in gps_map.items():
-            if not rec.get("deleted", False):
-                continue
-
-            old = rec.get("old")
-            if not (isinstance(old, list) and len(old) == 2):
-                continue
-            old_lat, old_lon = float(old[0]), float(old[1])
-
-            target = None
-
-            cim_after = rec.get("cim_after")
-            if isinstance(cim_after, str) and cim_after:
-                target = cim_index_current.get(cim_after)
-
-            if target is None:
-                current_cim = cim_map.get(orig_cim)
-                if isinstance(current_cim, str) and current_cim:
-                    target = cim_index_current.get(current_cim)
-
-            if target is None:
-                fn = rec.get("full_name_after")
-                if isinstance(fn, str) and fn:
-                    target = _search_by_full_name_after(app, fn)
-
-            if target is None:
-                logger.warning("Deleted-GPS target not found (orig_cim=%s)", orig_cim)
-                continue
-
-            safe_set(target, "GPSlat", old_lat, verbose=False)
-            safe_set(target, "GPSlon", old_lon, verbose=False)
+        restore_gps(
+            app=app,
+            gps_map=gps_map,
+            cim_index_current=cim_index_current,
+            cim_map=cim_map,
+        )
+        obj_dict = make_obj_dict(objects)
+        restore_line_type(obj_dict, line_rev)
     finally:
         _pf_bulk_mode_end(app)
 
@@ -1047,6 +1271,7 @@ def restore_from_mapping(app, mapping_path: Path):
         "for_name",
         "foreignKey",
     ]
+    objects = collect_unique_objects_for_anonymization(app)
 
     _pf_bulk_mode_begin(app)
     try:

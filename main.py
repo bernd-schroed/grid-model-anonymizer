@@ -71,6 +71,7 @@ from anym.anym_json import anonymize_json_file, restore_json_anonymization
 from anym.anym_PF import run_powerfactory_import_export, run_powerfactory_restore
 
 logger = logging.getLogger(" Main.py")
+# logging.basicConfig(filename="logger.log", encoding="utf-8", level=logging.DEBUG)
 
 
 def parse_args():
@@ -116,11 +117,19 @@ def parse_args():
     )
 
     parser.add_argument(
-        "--verbosity",
-        dest="verbosity",
+        "--verbose",
+        dest="verbose",
         action="store_true",
         help="Enable verbose logging (DEBUG level)",
     )
+
+    parser.add_argument(
+        "--log_file",
+        type=Path,
+        action=None,
+        help="Output file for the logging output (printed to cmd line if omitted)",
+    )
+
     parser.add_argument(
         "--output_file",
         type=Path,
@@ -225,11 +234,16 @@ def _is_cgmes(path: Path) -> bool:
     return path.suffix.lower() in (".zip", ".xml")
 
 
-def _set_output_verbosity(verbose: bool):
+def _set_output_verbosity(verbose: bool, log_file: Path):
     if verbose:
-        logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
+        level = logging.DEBUG
     else:
-        logging.basicConfig(stream=sys.stdout, level=logging.INFO)
+        level = logging.INFO
+
+    if log_file is None:
+        logging.basicConfig(level=level, stream=sys.stdout)
+    else:
+        logging.basicConfig(level=level, filename=log_file, encoding="utf-8")
 
 
 def _split_columns_and_categories(input_str: str) -> list[str]:
@@ -245,11 +259,12 @@ def main():
     backend based on the input file's suffix.
     """
     args = parse_args()
+
     try:
-        _set_output_verbosity(args.verbosity)
+        _set_output_verbosity(args.verbose, args.log_file)
     except AttributeError:
         # argparse doesn't set this attribute if the flag is omitted
-        _set_output_verbosity(False)
+        _set_output_verbosity(False, args.log_file)
 
     logger.info("Starting anonymizer toolkit...")
 
