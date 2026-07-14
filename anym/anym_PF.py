@@ -354,10 +354,10 @@ def make_obj_dict(objects: List) -> Dict[str, object]:
     objects_dict: Dict[str, object] = {}
 
     for obj in objects:
-        obj_name = _get_loc_name(obj)
-        obj_class = obj.GetClassName()
         # since one loc_name can be given to multiple loc names
         # the obj_class is added to the key
+        obj_name = _get_loc_name(obj)
+        obj_class = obj.GetClassName()
         obj_key = obj_name + "." + obj_class
         objects_dict[obj_key] = obj
     return objects_dict
@@ -878,6 +878,8 @@ def set_line_length(obj: object, anonymizer: SeededNameAnonymizer) -> None:
     anonymizer: SeededNameAnonymizer
         the used anonymizer object
     """
+
+    # check if the object is a power line and actually needs length resetting
     obj_name = _get_loc_name(obj)
     new_name = obj_name + "LineType"
     old_len = _get_float_attr(obj, "dline")
@@ -886,15 +888,19 @@ def set_line_length(obj: object, anonymizer: SeededNameAnonymizer) -> None:
     if old_len == 1 or old_len == 0:
         return
 
+    # create the new line type from old one
     ln_type = obj.GetType()
     ln_name = _get_loc_name(ln_type)
     new_type = create_new_line_type(ln_type, new_name)
 
-    impedance_ratio = old_len
+    # reset the impedance, since the new line length is always 1 km the ratio = old length
+    impedance_ratio = old_len / 1
     set_impedances(ln_type, new_type, impedance_ratio)
 
+    # save the new line in the anonymizer
     anonymizer.line_mapping[ln_name] = new_name
 
+    # reset the line data
     safe_set(obj, "dline", float(1), verbose=False)
     safe_set(obj, "typ_id", new_type, verbose=False)
 
@@ -1184,6 +1190,7 @@ def restore_line_type(
 
         if ln_type_key.endswith("LineType.TypLne"):
 
+            # get all the data about the line and line type
             anon_line_name = ln_type_key[:15]
 
             line_rev_key = ln_type_key[:23]
@@ -1195,13 +1202,18 @@ def restore_line_type(
             orig_type_key = orig_type_name + ".TypLne"
             orig_type_obj = all_types[orig_type_key]
 
+            # get the ratio of the impedances
+            # this correspponds to the original line length
             anon_r = _get_float_attr(ln_type_obj, "rline")
             orig_r = _get_float_attr(orig_type_obj, "rline")
 
             orig_length = anon_r / orig_r
 
+            # reset the line information
             safe_set(line_obj, "dline", float(orig_length), verbose=False)
             safe_set(line_obj, "typ_id", orig_type_obj, verbose=False)
+
+            # delete the anon now unused line object
             ln_type_obj.Delete()
 
 
