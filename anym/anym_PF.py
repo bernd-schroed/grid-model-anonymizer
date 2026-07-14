@@ -50,8 +50,6 @@ exits with an error message at import time if no compatible version
 is found. Depends on: psutil, utils (SeededNameAnonymizer etc.).
 """
 
-# TODO: Fix that the orig names of the line types are not reset!
-# fix that the old GPS coordinates are not reset
 from __future__ import annotations
 
 import hashlib
@@ -338,12 +336,28 @@ def collect_unique_objects_for_anonymization(app) -> List:
     return list(unique.values())
 
 
-def make_obj_dict(objects: List):
+def make_obj_dict(objects: List) -> Dict[str, object]:
+    """
+    Create a Dictionary from a list of objects with a clear key
+    to search make searching for certain objects easier
+
+    Parameters
+    ----------
+    objects: List
+        The object list
+
+    Returns
+    -------
+    objects_dict: Dict
+        The object list as a dictionary
+    """
     objects_dict: Dict[str, object] = {}
 
     for obj in objects:
         obj_name = _get_loc_name(obj)
         obj_class = obj.GetClassName()
+        # since one loc_name can be given to multiple loc names
+        # the obj_class is added to the key
         obj_key = obj_name + "." + obj_class
         objects_dict[obj_key] = obj
     return objects_dict
@@ -827,9 +841,21 @@ def _gps_apply_and_record(
     safe_set(obj, "GPSlon", float(new_lon), verbose=False)
 
 
-def set_impedances(old_type, new_type, ratio):
+def set_impedances(old_type: object, new_type: object, ratio: float) -> None:
+    """
+    For power line type resetting, set the new impedances for that line
 
-    impedance_types = ["rline", "xline", "rline0", "xline0"]
+    Parameters
+    ----------
+    old_type, new_type : the line type objects with the the old impedance and the new
+    ratio              : the ratio between their impedances
+    """
+    impedance_types = [
+        "rline",
+        "xline",
+        "rline0",
+        "xline0",
+    ]  # do the 0 impedances actually need to be reset
 
     for impedance_type in impedance_types:
         impedance_value_per_km = _get_float_attr(old_type, impedance_type)
@@ -840,7 +866,18 @@ def set_impedances(old_type, new_type, ratio):
             )
 
 
-def set_line_length(obj, anonymizer: SeededNameAnonymizer):
+def set_line_length(obj: object, anonymizer: SeededNameAnonymizer) -> None:
+    """
+    reset the line lengths and the new line type and storing it in the anonymizer
+    for the mapping
+
+    Parameters
+    ----------
+    obj: Line object
+        the line object (not the line type object)
+    anonymizer: SeededNameAnonymizer
+        the used anonymizer object
+    """
     obj_name = _get_loc_name(obj)
     new_name = obj_name + "LineType"
     old_len = _get_float_attr(obj, "dline")
@@ -862,7 +899,22 @@ def set_line_length(obj, anonymizer: SeededNameAnonymizer):
     safe_set(obj, "typ_id", new_type, verbose=False)
 
 
-def create_new_line_type(old_type, new_name):
+def create_new_line_type(old_type, new_name: str):
+    """
+    create a new line type object as a copy of the old line type
+
+    Parameters
+    ----------
+    old_type : line type object
+        The old line type
+    new_name : string
+        The name of the new line type object
+
+    Returns
+    -------
+    new_type : line type object
+        The new line type
+    """
     parent = old_type.GetParent()
     new_type = parent.AddCopy(old_type, new_name)
     return new_type
@@ -1027,7 +1079,27 @@ def restore_anon_tokens_in_text(text: str, anon_rev: Dict[str, str]) -> str:
     return _ANON_RE.sub(repl, text)
 
 
-def restore_gps(app, gps_map, cim_index_current, cim_map):
+def restore_gps(
+    app,
+    gps_map: Dict[str, Dict],
+    cim_index_current: Dict[str, object],
+    cim_map: Dict[str, str],
+) -> None:
+    """
+    The restoration of the gps data in a function. This represents
+    the first iteration of the gps restoration, that handles
+
+    Parameters
+    app: PowerFactory Application
+
+    gps_map: Dict[str, Dict]
+        The mapping of the gps data. The key is the cim reference and
+        data is a dictionary with old and new gps coordinates
+    cim_index_current: Dict[str, object]
+        The Cim References corresponding to each object.
+    cim_map: Dict[str, str]
+        The cim mapping with the old and new cim reference
+    """
     for orig_cim, rec in gps_map.items():
         if not rec.get("deleted", False):
             continue
@@ -1061,16 +1133,50 @@ def restore_gps(app, gps_map, cim_index_current, cim_map):
         safe_set(target, "GPSlon", old_lon, verbose=False)
 
 
-def get_all_line_types(objects_dict):
+def get_all_line_types(objects_dict: Dict[str, object]) -> Dict[str, object]:
+    """
+    Since power Factory only gives the line types, that are currently used in a
+    project, this function combines all the unused and used types to a new line type dictionary.
+
+    Parameters
+    ----------
+    objects_dict: Dict[str, object]
+        The objects dictionary with every used object
+
+    Returns
+    -------
+    all_types_dict: Dict[str, object]
+        A Dictionary that contains all the line type objects used and unused
+    """
     for obj_key, obj in objects_dict.items():
+        # only one instance of "TypLne" is necessary, since we can find all the other "TypLne"
+        # with the "GetParent" and "GetChildren" command.
         if obj_key.endswith("LineType.TypLne"):
             type_library = obj.GetParent()
             all_types = type_library.GetChildren(1)
             all_types_dict = make_obj_dict(all_types)
             return all_types_dict
 
+    raise AttributeError(
+        "The current project does not use any '.TypLne' ",
+        "Objects. Line Type restoring is not possible",
+    )
 
-def restore_line_type(objects_dict, line_rev):
+
+def restore_line_type(
+    objects_dict: Dict[str, object], line_rev: Dict[str, str]
+) -> None:
+    """
+    Restoring all old line types, line lengths and impedances
+
+    Parameters
+    ----------
+    objects_dict: Dict[str, object]
+        The dictionary with all objects and a clear key
+    line_rev:  Dict[str, str]
+        The reverse mapping with all the new anonymious linetype names as key
+        and old lines as data
+    """
 
     all_types = get_all_line_types(objects_dict)
 
