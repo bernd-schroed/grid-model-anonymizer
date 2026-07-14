@@ -1,9 +1,51 @@
+"""
+anym_json.py - JSON anonymizer
+=============================
+
+Anonymizes (or restores) a JSON file (a list of dict-like entries) using
+the same seed-based deterministic token mapping shared with anym_PF /
+anym_cgmes / anym_csv, driven by an external mapping JSON so the same
+names/IDs stay consistent across exports of the same dataset.
+
+Workflow
+--------
+1. Load the input JSON file (expected: a list of dict entries).
+2. Determine which keys ("categories") to anonymize:
+   - use the explicitly given `categories` list, or
+   - if none is given, auto-detect all keys occurring anywhere across
+     the entries (via `_get_json_keys`).
+3. Anonymize: for every entry, replace the value of each present
+   category key with a deterministic, seed-based token via
+   SeededNameAnonymizer.
+4. Write the transformed JSON to the output path, and persist the
+   generated mapping JSON.
+5. Restore: reverse the process using a previously saved mapping -
+   any string value starting with the mapping's prefix (`ANON_` by
+   default) is looked up and replaced with its original value,
+   regardless of which key it appears under.
+
+Notes
+-----
+- "anonymize" mode replaces values and grows the mapping; "restore"
+  mode looks values up by their `ANON_` prefix and reverses them
+  using the mapping's reverse lookup table, leaving unrecognized
+  values untouched.
+- Only string values are touched; other types (numbers, booleans,
+  nested objects/lists) are left as-is.
+- Auto-detecting categories (step 2, no `categories` given) is
+  convenient for unknown JSON structures but anonymizes every key
+  found in the data - pass an explicit `categories` list to limit
+  anonymization to specific fields.
+
+Depends on: utils (SeededNameAnonymizer, load_mapping_json, save_mapping_json).
+"""
+
 import json
 import logging
 from pathlib import Path
 from typing import List, Optional
 
-from utils import SeededNameAnonymizer, save_mapping_json
+from utils import SeededNameAnonymizer, load_mapping_json, save_mapping_json
 
 logger = logging.getLogger("anym_json.py")
 
@@ -66,11 +108,27 @@ def save_json_file(data, file_path: str):
 
 
 def anonymize_json_data(
-    input_json: str,
+    input_json: list,
     anonymizer: SeededNameAnonymizer,
     categories: Optional[List[str]] = None,
 ):
+    """
+    Anonymize the content of a JSON object based on specified categories.
 
+    Parameters
+    ----------
+    input_json : dict or list
+        The Python object to be anonymized.
+    anonymizer : SeededNameAnonymizer
+        The anonymizer to use for anonymizing the data.
+    categories : Optional[List[str]]
+        The list of categories to anonymize.
+
+    Returns
+    -------
+    dict or list
+        The anonymized JSON object.
+    """
     for entry in input_json:
         for category in categories:
             if category in entry:
@@ -138,3 +196,44 @@ def anonymize_json_file(
 
     save_mapping_json(mapping_output, anonymizer)
     save_json_file(anonymized_data, output_json)
+
+
+def restore_json_anonymization(
+    input_json: str,
+    output_json: str,
+    mapping_input: Path,
+):
+    """
+    Reconstruct the original content of an anonymized JSON file using a mapping.
+
+    Parameters
+    ----------
+    input_json : str
+        The path to the anonymized JSON file.
+    output_json : str
+        The path where the reconstructed JSON will be saved.
+    mapping_input : Path
+        The path to the mapping file used for reconstruction.
+    categories : Optional[List[str]]
+        The list of categories to reconstruct.
+
+    Raises
+    ------
+    FileNotFoundError
+        If the input file or mapping file does not exist.
+    json.JSONDecodeError
+        If the input file is not a valid JSON.
+    """
+    data = load_json_file(input_json)
+    mapping_data = load_mapping_json(mapping_input)
+
+    prefix = str(mapping_data.get("prefix", "ANON_") or "ANON_")
+
+    for element in data:
+        if isinstance(element, dict):
+            for key, value in element.items():
+                if isinstance(value, str) and value.startswith(prefix):
+                    original_value = mapping_data["anon_mapping"].get(value)
+                    if original_value:
+                        element[key] = original_value
+    save_json_file(data, output_json)
