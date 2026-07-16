@@ -205,6 +205,11 @@ def _generate_seeded_uuid(old_id: str, seed: str) -> str:
     return "_" + uuid
 
 
+def _u(tag: str, seed: str) -> float:
+    h = hashlib.sha256((str(seed) + "|" + tag).encode("utf-8")).hexdigest()
+    return (int(h[:16], 16) % 10_000_000) / 10_000_000.0
+
+
 def _build_geo_transform(seed: str, max_shift_frac: float = 0.45):
     """
     Rotation + Translation im normalisierten Koordinatenraum.
@@ -220,14 +225,11 @@ def _build_geo_transform(seed: str, max_shift_frac: float = 0.45):
     zusätzlich zur Rotation.  _scale_back_to_valid_geo fängt Randfälle ab.
     """
 
-    def _u(tag: str) -> float:
-        h = hashlib.sha256((str(seed) + "|" + tag).encode("utf-8")).hexdigest()
-        return (int(h[:16], 16) % 10_000_000) / 10_000_000.0
-
-    angle = 2.0 * math.pi * _u("gps_angle")
-    mirror = _u("gps_mirror") > 0.5
-    dx = (2.0 * _u("gps_dx") - 1.0) * max_shift_frac
-    dy = (2.0 * _u("gps_dy") - 1.0) * max_shift_frac
+    angle = 2.0 * math.pi * _u("gps_angle", seed)
+    mirror = _u("gps_mirror", seed) > 0.5
+    rescale = math.exp((_u("gps_rescale", seed) - 1) * 2.0)
+    dx = (2.0 * _u("gps_dx", seed) - 1.0) * max_shift_frac
+    dy = (2.0 * _u("gps_dy", seed) - 1.0) * max_shift_frac
     c, s = math.cos(angle), math.sin(angle)
 
     def transform(lat: float, lon: float) -> Tuple[float, float]:
@@ -239,6 +241,8 @@ def _build_geo_transform(seed: str, max_shift_frac: float = 0.45):
         yr = s * x + c * y
         xr += dx  # Verschiebung
         yr += dy
+        xr = xr * rescale
+        yr = yr * rescale
         return yr * 90.0, xr * 180.0  # zurück auf Grad
 
     return transform
