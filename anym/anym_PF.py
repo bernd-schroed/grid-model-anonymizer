@@ -251,6 +251,7 @@ class PfObjects:
             "*.IntGrf",
         ]
 
+        # add all calculation relevant objects
         self.objects = []
         for pat in patterns:
             try:
@@ -258,6 +259,7 @@ class PfObjects:
             except (AttributeError, TypeError):
                 pass
 
+        # delete cim models for anonymization
         project = app.GetActiveProject()
         cim_models = project.GetContents("*.CimMdel", 1)
         for cim_model in cim_models:
@@ -266,8 +268,21 @@ class PfObjects:
             except AttributeError:
                 pass
 
+        # add certain objects, that are not relevant to calculations e.g. graphics names to objects
+        patterns = [
+            "*.IntGrfnet",
+        ]
+        for pat in patterns:
+            new_objs = project.GetContents(pat, 1)
+            logger.debug(new_objs)
+            try:
+                self.objects += new_objs or []
+            except (AttributeError, TypeError) as e:
+                logger.error("Error adding %s to objects: %s", pat, e)
+
         mapsinfos = project.GetContents("*.IntGrf", 1)
 
+        # delete names of graphical elements
         for single_map in mapsinfos:
             try:
                 # map.Delete()
