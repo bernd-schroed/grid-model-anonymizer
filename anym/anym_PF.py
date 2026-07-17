@@ -248,7 +248,6 @@ class PfObjects:
             "*.Typ*",
             "*.StaSwitch",
             "*.StaCubic",
-            "*.IntGrf",
         ]
 
         # add all calculation relevant objects
@@ -271,6 +270,7 @@ class PfObjects:
         # add certain objects, that are not relevant to calculations e.g. graphics names to objects
         patterns = [
             "*.IntGrfnet",
+            "*.IntCases",
         ]
         for pat in patterns:
             new_objs = project.GetContents(pat, 1)
@@ -609,15 +609,27 @@ def anonymize_string_fields(
 
 def _make_unique_if_needed(obj, desired: str, anonymizer: SeededNameAnonymizer) -> str:
     old = _get_loc_name(obj)
+    full = _get_full_name(obj)
     exception_list = [
-        "Library",
-        "Network Model",
-        "Study Cases",
-        "Equipment Type Library",
-        "PowSwitch",
-        "Network Data",
+        "IntArea",
+        "IntBmu",
+        "IntBoundary",
+        "IntBbone",
+        "IntCircuit",
+        "IntDependency",
+        "IntFeeders",
+        "IntLvscale",
+        "IntOperator",
+        "IntOwner",
+        "IntStyle",
+        "IntPath",
+        "IntRoute",
+        "IntZone",
+        "SetFold",
     ]
-    if old in exception_list:
+    if full.endswith(".IntPrjfolder"):
+        return
+    if full.endswith(tuple(exception_list)):
         return
     try:
         _set_loc_name_only(obj, desired)
