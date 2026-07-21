@@ -52,10 +52,8 @@ is found. Depends on: psutil, utils (SeededNameAnonymizer etc.).
 
 from __future__ import annotations
 
-import hashlib
 import logging
 import math
-import os
 import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -69,6 +67,7 @@ from utils import (
     _meters_to_deg_lat,
     _meters_to_deg_lon,
     _obj_unit_from_name,
+    _p,
     _scale_back_to_valid_geo,
     load_mapping_json,
     save_mapping_json,
@@ -159,23 +158,6 @@ else:
     sys.path.append(str(pf_python_path))
 
     import powerfactory as pf  # type: ignore # pylint: disable=import-error,wrong-import-position,wrong-import-order
-
-
-# ----------------------------
-# Small utils
-# ----------------------------
-def _p(p: Path) -> str:
-    return os.fspath(Path(p).resolve())
-
-
-def _seed_hash(seed: str, tag: str) -> int:
-    h = hashlib.sha256((str(seed) + "|" + tag).encode("utf-8")).hexdigest()
-    return int(h[:16], 16)
-
-
-def _seed_unit(seed: str, tag: str) -> float:
-    x = _seed_hash(seed, tag)
-    return (x % 10_000_000) / 10_000_000.0
 
 
 # ----------------------------

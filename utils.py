@@ -64,6 +64,7 @@ the resulting mapping JSON.
 import hashlib
 import json
 import math
+import os
 from pathlib import Path
 from typing import Dict, Tuple
 
@@ -286,3 +287,17 @@ def _scale_back_to_valid_geo(
         scale = min(scale, (-lon_limit - old_lon) / dlon)
     scale = max(0.0, scale)
     return old_lat + scale * dlat, old_lon + scale * dlon
+
+
+def _p(p: Path) -> str:
+    return os.fspath(Path(p).resolve())
+
+
+def _seed_hash(seed: str, tag: str) -> int:
+    h = hashlib.sha256((str(seed) + "|" + tag).encode("utf-8")).hexdigest()
+    return int(h[:16], 16)
+
+
+def _seed_unit(seed: str, tag: str) -> float:
+    x = _seed_hash(seed, tag)
+    return (x % 10_000_000) / 10_000_000.0
