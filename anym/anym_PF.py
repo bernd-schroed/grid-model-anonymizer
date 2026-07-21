@@ -268,10 +268,7 @@ class PfObjects:
                 pass
 
         # add certain objects, that are not relevant to calculations e.g. graphics names to objects
-        patterns = [
-            "*.IntGrfnet",
-            "*.IntCases",
-        ]
+        patterns = ["*.IntGrfnet", "*.IntEvt", "*.IntPlannedout", "*.EvtShc"]
         for pat in patterns:
             new_objs = project.GetContents(pat, 1)
             logger.debug(new_objs)
@@ -626,6 +623,7 @@ def _make_unique_if_needed(obj, desired: str, anonymizer: SeededNameAnonymizer) 
         "IntRoute",
         "IntZone",
         "SetFold",
+        "Fault.IntCase",
     ]
     if full.endswith(".IntPrjfolder"):
         return
@@ -953,6 +951,17 @@ def create_new_line_type(old_type, new_name: str):
     return new_type
 
 
+def _has_suffix(full: str) -> bool:
+    # Geh den Namen von hinten durch. WEnn ein Punkt vor Slash kommt gib true, sonst nicht
+    """ """
+    for char in reversed(full):
+        if char == ".":
+            return True
+        elif char == "\\":
+            return False
+    raise AttributeError("Full Objectname is neither Folder or Object.")
+
+
 # ----------------------------
 # Full anonymize procedure
 # ----------------------------
@@ -990,6 +999,8 @@ def anonymize_objects(
                 or full.endswith(".IntCase")
                 or full.endswith(".IntUser")
                 or full.startswith(r"\Lib.IntLibrary")
+                or full.endswith(".IntFltcases")
+                or not _has_suffix(full)
             ):
                 continue
 
