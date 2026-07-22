@@ -95,6 +95,14 @@ class SeededNameAnonymizer:
         # mapping which line was used before to restore original length and impedance values
         self.line_mapping: Dict[str, str] = {}
 
+        # mapping when the time for case studies are set
+        self.time_adding: int = int(
+            _seed_hash(seed=seed, tag="study_casereset") % 10000000000
+        )
+        if self.time_adding % 2 == 0:
+            self.time_adding = -self.time_adding
+        self.time_mapping: Dict[int, int] = {}
+
     def translate_attr(self, attr: str, value: str) -> str:  # type: ignore # pylint:disable=unused-argument
         """
         Anonymize an attribute value via the unified string mapping.
@@ -149,6 +157,14 @@ class SeededNameAnonymizer:
         self.reverse[new_name] = name
         return new_name
 
+    def add_time(self, old_time: int) -> int:
+        new_time = old_time + self.time_adding
+        if new_time < 0:
+            new_time = old_time - self.time_adding
+        if new_time >= 2**32:  # internal edge value for time is 2**32
+            new_time = self.time_adding
+        return new_time
+
 
 def save_mapping_json(path: Path, anonymizer: SeededNameAnonymizer):
     """Serialize anonymizer state to a JSON mapping file."""
@@ -159,6 +175,7 @@ def save_mapping_json(path: Path, anonymizer: SeededNameAnonymizer):
         "seed": anonymizer.seed,
         "prefix": anonymizer.prefix,
         "length": anonymizer.length,
+        "time_mapping": anonymizer.time_mapping,
         # unified mapping for all ANON_* strings
         "anon_mapping": anonymizer.forward,
         "line_mapping": anonymizer.line_mapping,

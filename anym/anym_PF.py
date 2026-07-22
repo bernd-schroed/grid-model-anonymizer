@@ -933,6 +933,13 @@ def create_new_line_type(old_type, new_name: str):
     return new_type
 
 
+def anonymize_time(obj, anonymizer):
+    old_time = int(_get_float_attr(obj, "iStudyTime"))
+    new_time = anonymizer.add_time(old_time)
+    safe_set(obj, "iStudyTime", new_time)
+    anonymizer.time_mapping[old_time] = new_time
+
+
 def _has_suffix(full: str) -> bool:
     # Geh den Namen von hinten durch. WEnn ein Punkt vor Slash kommt gib true, sonst nicht
     """ """
@@ -976,9 +983,12 @@ def anonymize_objects(
             full = obj.GetFullName()
             if not full:
                 continue
+            if full.endswith(".IntCase"):
+                anonymize_time(obj, anonymizer)
+                continue
+
             if (
                 full.endswith(".IntPrj")
-                or full.endswith(".IntCase")
                 or full.endswith(".IntUser")
                 or full.startswith(r"\Lib.IntLibrary")
                 or full.endswith(".IntFltcases")
