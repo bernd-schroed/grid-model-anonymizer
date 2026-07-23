@@ -250,10 +250,15 @@ class PfObjects:
                 pass
 
         # add certain objects, that are not relevant to calculations e.g. graphics names to objects
-        patterns = ["*.IntGrfnet", "*.IntEvt", "*.IntPlannedout", "*.EvtShc"]
+        patterns = [
+            "*.IntGrfnet",
+            "*.IntEvt",
+            "*.IntPlannedout",
+            "*.EvtShc",
+            "*.IntCase",
+        ]
         for pat in patterns:
             new_objs = project.GetContents(pat, 1)
-            logger.debug(new_objs)
             try:
                 self.objects += new_objs or []
             except (AttributeError, TypeError) as e:
@@ -937,7 +942,7 @@ def anonymize_time(obj, anonymizer):
     old_time = int(_get_float_attr(obj, "iStudyTime"))
     new_time = anonymizer.add_time(old_time)
     safe_set(obj, "iStudyTime", new_time)
-    anonymizer.time_mapping[old_time] = new_time
+    anonymizer.time_mapping[str(old_time)] = str(new_time)
 
 
 def _has_suffix(full: str) -> bool:
@@ -1169,6 +1174,19 @@ def restore_gps(
         safe_set(target, "GPSlon", old_lon, verbose=False)
 
 
+def restore_times(objects: List, time_rev: Dict):
+    for obj in objects:
+        full = _get_full_name(obj)
+        if full.endswith("IntCase"):
+            restore_timestamp(obj, time_rev)
+
+
+def restore_timestamp(obj, time_rev):
+    anym_time = int(_get_float_attr(obj, "iStudyTime"))
+    orig_time = int(time_rev[str(anym_time)])
+    safe_set(obj, "iStudyTime", orig_time, verbose=False)
+
+
 def get_all_line_types(objects_dict: Dict[str, object]) -> Dict[str, object]:
     """
     Since power Factory only gives the line types, that are currently used in a
@@ -1262,6 +1280,9 @@ def restore_from_mapping(app, mapping_path: Path):
 
     anon_map: Dict[str, str] = data.get("anon_mapping", {}) or {}  # original -> anon
     anon_rev: Dict[str, str] = {v: k for k, v in anon_map.items()}  # anon -> original
+
+    time_map: Dict[str, str] = data.get("time_mapping", {}) or {}  # old -> new
+    time_rev: Dict[str, str] = {v: k for k, v in time_map.items()}  # anon -> original
 
     cim_map: Dict[str, str] = data.get("cimRdfId_mapping", {}) or {}  # old -> new
     cim_rev: Dict[str, str] = {v: k for k, v in cim_map.items()}  # new -> old
@@ -1374,6 +1395,15 @@ def restore_from_mapping(app, mapping_path: Path):
 
             safe_set(target, "GPSlat", old_lat, verbose=False)
             safe_set(target, "GPSlon", old_lon, verbose=False)
+    finally:
+        _pf_bulk_mode_end(app)
+
+    # ---------------------------------------------------------
+    # 4) Restore the time stamps for each case
+    # ---------------------------------------------------------
+    _pf_bulk_mode_begin(app)
+    try:
+        restore_times(objects, time_rev)
     finally:
         _pf_bulk_mode_end(app)
 

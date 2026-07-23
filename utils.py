@@ -96,12 +96,13 @@ class SeededNameAnonymizer:
         self.line_mapping: Dict[str, str] = {}
 
         # mapping when the time for case studies are set
+        time_adding = int(_seed_hash(seed=seed, tag="study_casereset"))
         self.time_adding: int = int(
-            _seed_hash(seed=seed, tag="study_casereset") % 10000000000
+            time_adding % 1000000000  # 1 Billion seconds ~= 30 Years
         )
         if self.time_adding % 2 == 0:
             self.time_adding = -self.time_adding
-        self.time_mapping: Dict[int, int] = {}
+        self.time_mapping: Dict[str, str] = {}
 
     def translate_attr(self, attr: str, value: str) -> str:  # type: ignore # pylint:disable=unused-argument
         """
@@ -162,7 +163,7 @@ class SeededNameAnonymizer:
         if new_time < 0:
             new_time = old_time - self.time_adding
         if new_time >= 2**32:  # internal edge value for time is 2**32
-            new_time = self.time_adding
+            new_time = self.time_adding - old_time
         return new_time
 
 
