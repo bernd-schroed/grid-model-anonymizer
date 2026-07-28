@@ -336,3 +336,17 @@ def _seed_hash(seed: str, tag: str) -> int:
 def _seed_unit(seed: str, tag: str) -> float:
     x = _seed_hash(seed, tag)
     return (x % 10_000_000) / 10_000_000.0
+
+
+def _has_suffix(full: str) -> bool:
+    """
+    Checks isf the string as a suffix (.txt for example). By going through the string in reverse
+    order and checking if the character is a dot. If a backslash comes before the dot it is
+    considered a folder.
+    """
+    for char in reversed(full):
+        if char == ".":
+            return True
+        elif char == "\\":
+            return False
+    raise AttributeError("Full Objectname is neither Folder or Object.")

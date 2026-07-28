@@ -1,4 +1,3 @@
-# pylint:disable=too-many-lines
 """
 anym_pf.py - PowerFactory (.pfd) anonymizer
 ============================================
@@ -64,6 +63,7 @@ from utils import (
     SeededNameAnonymizer,
     _build_geo_transform,
     _generate_seeded_uuid,
+    _has_suffix,
     _meters_to_deg_lat,
     _meters_to_deg_lon,
     _obj_unit_from_name,
@@ -76,7 +76,9 @@ from utils import (
 logger = logging.getLogger(" anym_pf.py")
 
 
-# PowerFactory Python path
+# ----------------------------
+# power factory version check
+# ----------------------------
 def get_pf_version() -> Path:
     """
     Locate the newest installed PowerFactory version.
@@ -853,6 +855,11 @@ def _gps_apply_and_record(
     safe_set(obj, "GPSlon", float(new_lon), verbose=False)
 
 
+# ----------------------------
+# Line Resetting Handlers
+# ----------------------------
+
+
 def set_impedances(old_type: object, new_type: object, ratio: float) -> None:
     """
     For power line type resetting, set the new impedances for that line
@@ -867,7 +874,7 @@ def set_impedances(old_type: object, new_type: object, ratio: float) -> None:
         "xline",
         "rline0",
         "xline0",
-    ]  # do the 0 impedances actually need to be reset
+    ]  # do the 0 impedances actually need to be reset?
 
     for impedance_type in impedance_types:
         impedance_value_per_km = _get_float_attr(old_type, impedance_type)
@@ -938,6 +945,11 @@ def create_new_line_type(old_type, new_name: str):
     return new_type
 
 
+# ----------------------------
+# Time Anonymization
+# ----------------------------
+
+
 def anonymize_time(obj, anonymizer):
     """
     Set a new anonymized time for powerfactory object.
@@ -954,20 +966,6 @@ def anonymize_time(obj, anonymizer):
     new_time = anonymizer.add_time(old_time)
     safe_set(obj, "iStudyTime", new_time)
     anonymizer.time_mapping[str(old_time)] = str(new_time)
-
-
-def _has_suffix(full: str) -> bool:
-    """
-    Checks isf the string as a suffix (.txt for example). By going through the string in reverse
-    order and checking if the character is a dot. If a backslash comes before the dot it is
-    considered a folder.
-    """
-    for char in reversed(full):
-        if char == ".":
-            return True
-        elif char == "\\":
-            return False
-    raise AttributeError("Full Objectname is neither Folder or Object.")
 
 
 # ----------------------------
