@@ -939,6 +939,17 @@ def create_new_line_type(old_type, new_name: str):
 
 
 def anonymize_time(obj, anonymizer):
+    """
+    Set a new anonymized time for powerfactory object.
+
+    Parameters
+    ----------
+    obj : type object
+        The powerfactory object to be time updated
+    anonymizer : anonymizer
+        The anonymizer object used for the anonymization
+
+    """
     old_time = int(_get_float_attr(obj, "iStudyTime"))
     new_time = anonymizer.add_time(old_time)
     safe_set(obj, "iStudyTime", new_time)
@@ -946,8 +957,11 @@ def anonymize_time(obj, anonymizer):
 
 
 def _has_suffix(full: str) -> bool:
-    # Geh den Namen von hinten durch. WEnn ein Punkt vor Slash kommt gib true, sonst nicht
-    """ """
+    """
+    Checks isf the string as a suffix (.txt for example). By going through the string in reverse
+    order and checking if the character is a dot. If a backslash comes before the dot it is
+    considered a folder.
+    """
     for char in reversed(full):
         if char == ".":
             return True
@@ -1175,13 +1189,33 @@ def restore_gps(
 
 
 def restore_times(objects: List, time_rev: Dict):
+    """
+    A function to iterate through all objects. If they are an "IntCase" they are being restored.
+
+    Parameters
+    ----------
+    objects : list of objects
+        list of all objects in the project
+    time_rev : Dict
+        Dict of the anonymized times and their original counterparts
+    """
     for obj in objects:
         full = _get_full_name(obj)
         if full.endswith("IntCase"):
             restore_timestamp(obj, time_rev)
 
 
-def restore_timestamp(obj, time_rev):
+def restore_timestamp(obj, time_rev: Dict):
+    """
+    Gets the anonymized time from the object, gets the original time and restores it to the object
+
+    Parameters
+    ----------
+    obj : powerfactory object
+        the object to be reset time
+    time_rev : Dict
+        Dict of the anonymized times and their original counterparts
+    """
     anym_time = int(_get_float_attr(obj, "iStudyTime"))
     orig_time = int(time_rev[str(anym_time)])
     safe_set(obj, "iStudyTime", orig_time, verbose=False)

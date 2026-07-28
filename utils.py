@@ -159,9 +159,26 @@ class SeededNameAnonymizer:
         return new_name
 
     def add_time(self, old_time: int) -> int:
+        """
+        adds the time adding value to the given time. Both are given in seconds from 01.01.1970.
+
+        Parameters
+        ----------
+        self: object
+            self object
+        old_time : int
+            The old time to be added with the time_adding
+        """
+
+        # just adding both ints together
         new_time = old_time + self.time_adding
+
+        # if the new time is below 0, because of time_adding being negative
+        # subtract it instead
         if new_time < 0:
             new_time = old_time - self.time_adding
+
+        # if the new time is higher than the maximum limit subtract old_time from time_adding
         if new_time >= 2**32:  # internal edge value for time is 2**32
             new_time = self.time_adding - old_time
         return new_time
