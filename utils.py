@@ -164,6 +164,7 @@ class SeededNameAnonymizer:
             new_time = old_time - self.time_adding
         if new_time >= 2**32:  # internal edge value for time is 2**32
             new_time = self.time_adding - old_time
+        self.time_mapping[str(old_time)] = str(new_time)
         return new_time
 
 

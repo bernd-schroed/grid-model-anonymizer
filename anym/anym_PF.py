@@ -942,7 +942,6 @@ def anonymize_time(obj, anonymizer):
     old_time = int(_get_float_attr(obj, "iStudyTime"))
     new_time = anonymizer.add_time(old_time)
     safe_set(obj, "iStudyTime", new_time)
-    anonymizer.time_mapping[str(old_time)] = str(new_time)
 
 
 def _has_suffix(full: str) -> bool:
