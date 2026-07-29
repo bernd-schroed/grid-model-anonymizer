@@ -64,6 +64,7 @@ the resulting mapping JSON.
 import hashlib
 import json
 import math
+import os
 from pathlib import Path
 from typing import Dict, Tuple
 
@@ -93,6 +94,15 @@ class SeededNameAnonymizer:
 
         # mapping which line was used before to restore original length and impedance values
         self.line_mapping: Dict[str, str] = {}
+
+        # mapping when the time for case studies are set
+        time_adding = int(_seed_hash(seed=seed, tag="study_casereset"))
+        self.time_adding: int = int(
+            time_adding % 1000000000  # 1 Billion seconds ~= 30 Years
+        )
+        if self.time_adding % 2 == 0:
+            self.time_adding = -self.time_adding
+        self.time_mapping: Dict[str, str] = {}
 
     def translate_attr(self, attr: str, value: str) -> str:  # type: ignore # pylint:disable=unused-argument
         """
@@ -148,6 +158,15 @@ class SeededNameAnonymizer:
         self.reverse[new_name] = name
         return new_name
 
+    def add_time(self, old_time: int) -> int:
+        new_time = old_time + self.time_adding
+        if new_time < 0:
+            new_time = old_time - self.time_adding
+        if new_time >= 2**32:  # internal edge value for time is 2**32
+            new_time = self.time_adding - old_time
+        self.time_mapping[str(old_time)] = str(new_time)
+        return new_time
+
 
 def save_mapping_json(path: Path, anonymizer: SeededNameAnonymizer):
     """Serialize anonymizer state to a JSON mapping file."""
@@ -158,6 +177,7 @@ def save_mapping_json(path: Path, anonymizer: SeededNameAnonymizer):
         "seed": anonymizer.seed,
         "prefix": anonymizer.prefix,
         "length": anonymizer.length,
+        "time_mapping": anonymizer.time_mapping,
         # unified mapping for all ANON_* strings
         "anon_mapping": anonymizer.forward,
         "line_mapping": anonymizer.line_mapping,
@@ -193,6 +213,28 @@ def load_mapping_json(path: Path) -> dict:
     return data
 
 
+def get_mappings(mapping_path: Path):
+    data = load_mapping_json(mapping_path)
+
+    line_map: Dict[str, str] = data.get("line_mapping", {}) or {}  # original -> anon
+    line_rev: Dict[str, str] = {v: k for k, v in line_map.items()}  # anon -> original
+
+    anon_map: Dict[str, str] = data.get("anon_mapping", {}) or {}  # original -> anon
+    anon_rev: Dict[str, str] = {v: k for k, v in anon_map.items()}  # anon -> original
+
+    time_map: Dict[str, str] = data.get("time_mapping", {}) or {}  # old -> new
+    time_rev: Dict[str, str] = {v: k for k, v in time_map.items()}  # anon -> original
+
+    cim_map: Dict[str, str] = data.get("cimRdfId_mapping", {}) or {}  # old -> new
+    cim_rev: Dict[str, str] = {v: k for k, v in cim_map.items()}  # new -> old
+
+    gps_map: Dict[str, dict] = data.get("gps_mapping", {}) or {}
+
+    prefix = data.get("prefix", "ANON_") or "ANON_"
+
+    return line_rev, anon_rev, time_rev, cim_rev, cim_map, gps_map, prefix
+
+
 # ----------------------------
 # Deterministic CIM id
 # ----------------------------
@@ -203,6 +245,11 @@ def _generate_seeded_uuid(old_id: str, seed: str) -> str:
     hex32 = digest[:32]
     uuid = f"{hex32[:8]}-{hex32[8:12]}-{hex32[12:16]}-{hex32[16:20]}-{hex32[20:32]}"
     return "_" + uuid
+
+
+def _u(tag: str, seed: str) -> float:
+    h = hashlib.sha256((str(seed) + "|" + tag).encode("utf-8")).hexdigest()
+    return (int(h[:16], 16) % 10_000_000) / 10_000_000.0
 
 
 def _build_geo_transform(seed: str, max_shift_frac: float = 0.45):
@@ -220,14 +267,11 @@ def _build_geo_transform(seed: str, max_shift_frac: float = 0.45):
     zusätzlich zur Rotation.  _scale_back_to_valid_geo fängt Randfälle ab.
     """
 
-    def _u(tag: str) -> float:
-        h = hashlib.sha256((str(seed) + "|" + tag).encode("utf-8")).hexdigest()
-        return (int(h[:16], 16) % 10_000_000) / 10_000_000.0
-
-    angle = 2.0 * math.pi * _u("gps_angle")
-    mirror = _u("gps_mirror") > 0.5
-    dx = (2.0 * _u("gps_dx") - 1.0) * max_shift_frac
-    dy = (2.0 * _u("gps_dy") - 1.0) * max_shift_frac
+    angle = 2.0 * math.pi * _u("gps_angle", seed)
+    mirror = _u("gps_mirror", seed) > 0.5
+    rescale = math.exp((_u("gps_rescale", seed) - 1) * 2.0)
+    dx = (2.0 * _u("gps_dx", seed) - 1.0) * max_shift_frac
+    dy = (2.0 * _u("gps_dy", seed) - 1.0) * max_shift_frac
     c, s = math.cos(angle), math.sin(angle)
 
     def transform(lat: float, lon: float) -> Tuple[float, float]:
@@ -239,6 +283,8 @@ def _build_geo_transform(seed: str, max_shift_frac: float = 0.45):
         yr = s * x + c * y
         xr += dx  # Verschiebung
         yr += dy
+        xr = xr * rescale
+        yr = yr * rescale
         return yr * 90.0, xr * 180.0  # zurück auf Grad
 
     return transform
@@ -282,3 +328,17 @@ def _scale_back_to_valid_geo(
         scale = min(scale, (-lon_limit - old_lon) / dlon)
     scale = max(0.0, scale)
     return old_lat + scale * dlat, old_lon + scale * dlon
+
+
+def _p(p: Path) -> str:
+    return os.fspath(Path(p).resolve())
+
+
+def _seed_hash(seed: str, tag: str) -> int:
+    h = hashlib.sha256((str(seed) + "|" + tag).encode("utf-8")).hexdigest()
+    return int(h[:16], 16)
+
+
+def _seed_unit(seed: str, tag: str) -> float:
+    x = _seed_hash(seed, tag)
+    return (x % 10_000_000) / 10_000_000.0

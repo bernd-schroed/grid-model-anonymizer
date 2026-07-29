@@ -52,10 +52,8 @@ is found. Depends on: psutil, utils (SeededNameAnonymizer etc.).
 
 from __future__ import annotations
 
-import hashlib
 import logging
 import math
-import os
 import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -69,8 +67,9 @@ from utils import (
     _meters_to_deg_lat,
     _meters_to_deg_lon,
     _obj_unit_from_name,
+    _p,
     _scale_back_to_valid_geo,
-    load_mapping_json,
+    get_mappings,
     save_mapping_json,
 )
 
@@ -162,23 +161,6 @@ else:
 
 
 # ----------------------------
-# Small utils
-# ----------------------------
-def _p(p: Path) -> str:
-    return os.fspath(Path(p).resolve())
-
-
-def _seed_hash(seed: str, tag: str) -> int:
-    h = hashlib.sha256((str(seed) + "|" + tag).encode("utf-8")).hexdigest()
-    return int(h[:16], 16)
-
-
-def _seed_unit(seed: str, tag: str) -> float:
-    x = _seed_hash(seed, tag)
-    return (x % 10_000_000) / 10_000_000.0
-
-
-# ----------------------------
 # PF call wrappers
 # ----------------------------
 def _call_pf_or_app(app, name: str, *args):
@@ -248,9 +230,9 @@ class PfObjects:
             "*.Typ*",
             "*.StaSwitch",
             "*.StaCubic",
-            "*.IntGrf",
         ]
 
+        # add all calculation relevant objects
         self.objects = []
         for pat in patterns:
             try:
@@ -258,6 +240,7 @@ class PfObjects:
             except (AttributeError, TypeError):
                 pass
 
+        # delete cim models for anonymization
         project = app.GetActiveProject()
         cim_models = project.GetContents("*.CimMdel", 1)
         for cim_model in cim_models:
@@ -266,8 +249,24 @@ class PfObjects:
             except AttributeError:
                 pass
 
+        # add certain objects, that are not relevant to calculations e.g. graphics names to objects
+        patterns = [
+            "*.IntGrfnet",
+            "*.IntEvt",
+            "*.IntPlannedout",
+            "*.EvtShc",
+            "*.IntCase",
+        ]
+        for pat in patterns:
+            new_objs = project.GetContents(pat, 1)
+            try:
+                self.objects += new_objs or []
+            except (AttributeError, TypeError) as e:
+                logger.error("Error adding %s to objects: %s", pat, e)
+
         mapsinfos = project.GetContents("*.IntGrf", 1)
 
+        # delete names of graphical elements
         for single_map in mapsinfos:
             try:
                 # map.Delete()
@@ -594,15 +593,28 @@ def anonymize_string_fields(
 
 def _make_unique_if_needed(obj, desired: str, anonymizer: SeededNameAnonymizer) -> str:
     old = _get_loc_name(obj)
+    full = _get_full_name(obj)
     exception_list = [
-        "Library",
-        "Network Model",
-        "Study Cases",
-        "Equipment Type Library",
-        "PowSwitch",
-        "Network Data",
+        "IntArea",
+        "IntBmu",
+        "IntBoundary",
+        "IntBbone",
+        "IntCircuit",
+        "IntDependency",
+        "IntFeeders",
+        "IntLvscale",
+        "IntOperator",
+        "IntOwner",
+        "IntStyle",
+        "IntPath",
+        "IntRoute",
+        "IntZone",
+        "SetFold",
+        "Fault.IntCase",
     ]
-    if old in exception_list:
+    if full.endswith(".IntPrjfolder"):
+        return
+    if full.endswith(tuple(exception_list)):
         return
     try:
         _set_loc_name_only(obj, desired)
@@ -926,6 +938,23 @@ def create_new_line_type(old_type, new_name: str):
     return new_type
 
 
+def anonymize_time(obj, anonymizer):
+    old_time = int(_get_float_attr(obj, "iStudyTime"))
+    new_time = anonymizer.add_time(old_time)
+    safe_set(obj, "iStudyTime", new_time)
+
+
+def _has_suffix(full: str) -> bool:
+    # Geh den Namen von hinten durch. WEnn ein Punkt vor Slash kommt gib true, sonst nicht
+    """ """
+    for char in reversed(full):
+        if char == ".":
+            return True
+        elif char == "\\":
+            return False
+    raise AttributeError("Full Objectname is neither Folder or Object.")
+
+
 # ----------------------------
 # Full anonymize procedure
 # ----------------------------
@@ -958,11 +987,16 @@ def anonymize_objects(
             full = obj.GetFullName()
             if not full:
                 continue
+            if full.endswith(".IntCase"):
+                anonymize_time(obj, anonymizer)
+                continue
+
             if (
                 full.endswith(".IntPrj")
-                or full.endswith(".IntCase")
                 or full.endswith(".IntUser")
                 or full.startswith(r"\Lib.IntLibrary")
+                or full.endswith(".IntFltcases")
+                or not _has_suffix(full)
             ):
                 continue
 
@@ -1139,6 +1173,19 @@ def restore_gps(
         safe_set(target, "GPSlon", old_lon, verbose=False)
 
 
+def restore_times(objects: List, time_rev: Dict):
+    for obj in objects:
+        full = _get_full_name(obj)
+        if full.endswith("IntCase"):
+            restore_timestamp(obj, time_rev)
+
+
+def restore_timestamp(obj, time_rev):
+    anym_time = int(_get_float_attr(obj, "iStudyTime"))
+    orig_time = int(time_rev[str(anym_time)])
+    safe_set(obj, "iStudyTime", orig_time, verbose=False)
+
+
 def get_all_line_types(objects_dict: Dict[str, object]) -> Dict[str, object]:
     """
     Since power Factory only gives the line types, that are currently used in a
@@ -1225,20 +1272,9 @@ def restore_from_mapping(app, mapping_path: Path):
     - Restore cimRdfId
     - Restore GPS for transformed cases AFTER cim restore
     """
-    data = load_mapping_json(mapping_path)
-
-    line_map: Dict[str, str] = data.get("line_mapping", {}) or {}  # original -> anon
-    line_rev: Dict[str, str] = {v: k for k, v in line_map.items()}  # anon -> original
-
-    anon_map: Dict[str, str] = data.get("anon_mapping", {}) or {}  # original -> anon
-    anon_rev: Dict[str, str] = {v: k for k, v in anon_map.items()}  # anon -> original
-
-    cim_map: Dict[str, str] = data.get("cimRdfId_mapping", {}) or {}  # old -> new
-    cim_rev: Dict[str, str] = {v: k for k, v in cim_map.items()}  # new -> old
-
-    gps_map: Dict[str, dict] = data.get("gps_mapping", {}) or {}
-
-    prefix = data.get("prefix", "ANON_") or "ANON_"
+    line_rev, anon_rev, time_rev, cim_rev, cim_map, gps_map, prefix = get_mappings(
+        mapping_path
+    )
 
     objects = collect_unique_objects_for_anonymization(app)
     # ---------------------------------------------------------
@@ -1344,6 +1380,15 @@ def restore_from_mapping(app, mapping_path: Path):
 
             safe_set(target, "GPSlat", old_lat, verbose=False)
             safe_set(target, "GPSlon", old_lon, verbose=False)
+    finally:
+        _pf_bulk_mode_end(app)
+
+    # ---------------------------------------------------------
+    # 4) Restore the time stamps for each case
+    # ---------------------------------------------------------
+    _pf_bulk_mode_begin(app)
+    try:
+        restore_times(objects, time_rev)
     finally:
         _pf_bulk_mode_end(app)
 
