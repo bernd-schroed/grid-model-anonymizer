@@ -34,6 +34,7 @@ import math
 import shutil
 import tempfile
 import zipfile
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Set, Tuple
 
@@ -83,6 +84,7 @@ GPS_Y_LOCALS: Set[str] = {
     "CoordinatePair.yPosition",
 }
 
+TIME_STAMP_LOCALS: Set[str] = {"Model.scenarioTime"}
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -107,6 +109,20 @@ def _strip_hash(ref: str) -> str:
     """Remove leading '#' from an rdf:resource / rdf:about value."""
     return ref[1:] if ref.startswith("#") else ref
 
+
+# ---------- Courtesy of Claude ------------
+def _cgmes_time_to_epoch(timestr: str) -> int:
+    """z.B. '1977-01-01T09:00:00Z' -> Sekunden seit 1970-01-01"""
+    dt = datetime.strptime(timestr, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    return int(dt.timestamp())
+
+
+def _epoch_to_cgmes_time(epoch: int) -> str:
+    """Sekunden seit 1970-01-01 -> '1977-01-01T09:00:00Z'"""
+    return datetime.fromtimestamp(epoch, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+# ------------------------------------------
 
 # ---------------------------------------------------------------------------
 # XML I/O
@@ -230,6 +246,9 @@ def _anonymize_tree(
     #      '/rdf:RDF/cim:PositionPoint[3]')
     #
     #   gps_buckets : str_key -> {"x_el": element, "y_el": element}
+
+    _anonymize_time(tree, anonymizer=anonymizer)
+
     _anonymize_gps(
         tree=tree,
         seed=seed,
@@ -384,6 +403,20 @@ def _anonymize_rdf(
                     RDF_RESOURCE,
                     "#" + new_bare if raw_res.startswith("#") else new_bare,
                 )
+
+
+def _anonymize_time(
+    tree: etree._ElementTree,
+    *,
+    anonymizer: SeededNameAnonymizer,
+):
+    for el in tree.iter():
+        loc = _local(el.tag)
+        if loc not in TIME_STAMP_LOCALS:
+            continue
+        cgmes_timestamp = _cgmes_time_to_epoch(el.text)
+        new_epoch_timestamp = anonymizer.add_time(cgmes_timestamp)
+        el.text = _epoch_to_cgmes_time(new_epoch_timestamp)
 
 
 # ---------------------------------------------------------------------------
