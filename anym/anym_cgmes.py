@@ -230,7 +230,36 @@ def _anonymize_tree(
     #      '/rdf:RDF/cim:PositionPoint[3]')
     #
     #   gps_buckets : str_key -> {"x_el": element, "y_el": element}
+    _anonymize_gps(
+        tree=tree,
+        seed=seed,
+        gps_delete=gps_delete,
+        gps_transform=gps_transform,
+        anonymizer=anonymizer,
+    )
+    # ------------------------------------------------------------------
+    # Step 2: text fields
+    # ------------------------------------------------------------------
+    _anonymize_text_fields(tree=tree, anonymizer=anonymizer, desc_delete=desc_delete)
+    # ------------------------------------------------------------------
+    # Step 3: rdf:ID remapping (optional, off by default)
+    # ------------------------------------------------------------------
+    _anonymize_rdf(
+        tree=tree,
+        seed=seed,
+        anonymizer=anonymizer,
+        remap_ids=remap_ids,
+    )
 
+
+def _anonymize_gps(
+    tree: etree._ElementTree,
+    *,
+    seed: str,
+    gps_delete: bool,
+    gps_transform,
+    anonymizer: SeededNameAnonymizer,
+):
     def _parent_key(p: etree._Element) -> str:
         v = p.get(RDF_ID) or ""
         if v:
@@ -281,9 +310,13 @@ def _anonymize_tree(
             "   %d GPS bucket(s) incomplete (x or y missing) – skipped", skipped
         )
 
-    # ------------------------------------------------------------------
-    # Step 2: text fields
-    # ------------------------------------------------------------------
+
+def _anonymize_text_fields(
+    tree: etree._ElementTree,
+    *,
+    anonymizer: SeededNameAnonymizer,
+    desc_delete: bool,
+):
     for el in tree.iter():
         loc = _local(el.tag)
 
@@ -301,9 +334,14 @@ def _anonymize_tree(
 
         el.text = anonymizer.translate(raw)
 
-    # ------------------------------------------------------------------
-    # Step 3: rdf:ID remapping (optional, off by default)
-    # ------------------------------------------------------------------
+
+def _anonymize_rdf(
+    tree: etree._ElementTree,
+    *,
+    seed: str,
+    anonymizer: SeededNameAnonymizer,
+    remap_ids: bool,
+):
     if not remap_ids:
         return
 
