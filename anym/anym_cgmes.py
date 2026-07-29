@@ -435,6 +435,19 @@ def _restore_tree(
     """Reverse anonymization in-place."""
 
     # Restore text fields
+    _restore_textfields(tree, anon_rev=anon_rev, prefix=prefix)
+    # Restore rdf:IDs (only relevant when remap_ids was used)
+    _restore_rdfids(tree, cim_rev=cim_rev)
+    # Restore GPS
+    _restore_gps(tree, gps_map=gps_map)
+
+
+def _restore_textfields(
+    tree: etree._ElementTree,
+    *,
+    anon_rev: Dict[str, str],
+    prefix: str,
+):
     for el in tree.iter():
         loc = _local(el.tag)
         if loc in ANON_TEXT_LOCALS and el.text:
@@ -442,7 +455,12 @@ def _restore_tree(
             if cur.startswith(prefix) and cur in anon_rev:
                 el.text = anon_rev[cur]
 
-    # Restore rdf:IDs (only relevant when remap_ids was used)
+
+def _restore_rdfids(
+    tree: etree._ElementTree,
+    *,
+    cim_rev: Dict[str, str],
+):
     if cim_rev:
         for el in tree.iter():
             raw_id = el.get(RDF_ID)
@@ -465,7 +483,12 @@ def _restore_tree(
                         RDF_RESOURCE, "#" + orig if raw_res.startswith("#") else orig
                     )
 
-    # Restore GPS
+
+def _restore_gps(
+    tree: etree._ElementTree,
+    *,
+    gps_map: Dict[str, dict],
+):
     gps_buckets: Dict[str, Dict[str, etree._Element]] = {}
     gps_key_by_elem_id: Dict[int, str] = {}
 
