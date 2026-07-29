@@ -48,7 +48,7 @@ from utils import (
     _meters_to_deg_lon,
     _obj_unit_from_name,
     _scale_back_to_valid_geo,
-    load_mapping_json,
+    get_mappings,
     save_mapping_json,
 )
 
@@ -690,13 +690,7 @@ def restore_cgmes(
 
     logger.info("=== anym_cgmes.py: Start Restore ===")
 
-    data = load_mapping_json(mapping_path)
-    prefix: str = str(data.get("prefix", "ANON_") or "ANON_")
-    anon_map: Dict[str, str] = data.get("anon_mapping", {}) or {}
-    anon_rev: Dict[str, str] = {v: k for k, v in anon_map.items()}
-    cim_map: Dict[str, str] = data.get("cimRdfId_mapping", {}) or {}
-    cim_rev: Dict[str, str] = {v: k for k, v in cim_map.items()}
-    gps_map: Dict[str, dict] = data.get("gps_mapping", {}) or {}
+    _, anon_rev, time_rev, cim_rev, __, gps_map, prefix = get_mappings(mapping_path)
 
     with tempfile.TemporaryDirectory() as tmp_str:
         tmp_dir = Path(tmp_str)

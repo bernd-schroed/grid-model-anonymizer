@@ -213,6 +213,28 @@ def load_mapping_json(path: Path) -> dict:
     return data
 
 
+def get_mappings(mapping_path: Path):
+    data = load_mapping_json(mapping_path)
+
+    line_map: Dict[str, str] = data.get("line_mapping", {}) or {}  # original -> anon
+    line_rev: Dict[str, str] = {v: k for k, v in line_map.items()}  # anon -> original
+
+    anon_map: Dict[str, str] = data.get("anon_mapping", {}) or {}  # original -> anon
+    anon_rev: Dict[str, str] = {v: k for k, v in anon_map.items()}  # anon -> original
+
+    time_map: Dict[str, str] = data.get("time_mapping", {}) or {}  # old -> new
+    time_rev: Dict[str, str] = {v: k for k, v in time_map.items()}  # anon -> original
+
+    cim_map: Dict[str, str] = data.get("cimRdfId_mapping", {}) or {}  # old -> new
+    cim_rev: Dict[str, str] = {v: k for k, v in cim_map.items()}  # new -> old
+
+    gps_map: Dict[str, dict] = data.get("gps_mapping", {}) or {}
+
+    prefix = data.get("prefix", "ANON_") or "ANON_"
+
+    return line_rev, anon_rev, time_rev, cim_rev, cim_map, gps_map, prefix
+
+
 # ----------------------------
 # Deterministic CIM id
 # ----------------------------
