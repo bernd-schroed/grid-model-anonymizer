@@ -429,6 +429,7 @@ def _restore_tree(
     *,
     anon_rev: Dict[str, str],
     cim_rev: Dict[str, str],
+    time_rev: Dict[str, str],
     gps_map: Dict[str, dict],
     prefix: str,
 ) -> None:
@@ -440,6 +441,8 @@ def _restore_tree(
     _restore_rdfids(tree, cim_rev=cim_rev)
     # Restore GPS
     _restore_gps(tree, gps_map=gps_map)
+    # Restore Time
+    _restore_time(tree, time_rev=time_rev)
 
 
 def _restore_textfields(
@@ -526,6 +529,20 @@ def _restore_gps(
             x_el.text = f"{old_lon:.6f}"
         if y_el is not None:
             y_el.text = f"{old_lat:.6f}"
+
+
+def _restore_time(
+    tree: etree._ElementTree,
+    *,
+    time_rev: Dict[str, str],
+):
+    for el in tree.iter():
+        loc = _local(el.tag)
+        if loc in TIME_STAMP_LOCALS:
+            anon_time_cgmes = el.text.strip()
+            anon_time_epoch = _cgmes_time_to_epoch(anon_time_cgmes)
+            orig_time_epoch = int(time_rev[str(anon_time_epoch)])
+            el.text = _epoch_to_cgmes_time(orig_time_epoch)
 
 
 # ---------------------------------------------------------------------------
@@ -712,6 +729,7 @@ def restore_cgmes(
                 tree,
                 anon_rev=anon_rev,
                 cim_rev=cim_rev,
+                time_rev=time_rev,
                 gps_map=gps_map,
                 prefix=prefix,
             )
