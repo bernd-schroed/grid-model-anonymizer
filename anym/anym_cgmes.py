@@ -110,6 +110,11 @@ def _strip_hash(ref: str) -> str:
     return ref[1:] if ref.startswith("#") else ref
 
 
+def _get_parent_rdfinfo(element, rdf_tag):
+    parent = element.getparent()
+    return parent.get(rdf_tag)
+
+
 # ---------- Courtesy of Claude ------------
 def _cgmes_time_to_epoch(timestr: str) -> int:
     """z.B. '1977-01-01T09:00:00Z' -> Sekunden seit 1970-01-01"""
