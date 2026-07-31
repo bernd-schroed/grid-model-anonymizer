@@ -236,7 +236,12 @@ def _anonymize_tree(
     """
 
     # ------------------------------------------------------------------
-    # Step 1: GPS – group x/y children by their parent element
+    # Step 1: time_stamps
+    # ------------------------------------------------------------------
+    _anonymize_time(tree, anonymizer=anonymizer)
+
+    # ------------------------------------------------------------------
+    # Step 2: GPS – group x/y children by their parent element
     # ------------------------------------------------------------------
     # IMPORTANT: lxml creates a new Python proxy object on every call to
     # el.getparent(), so id(parent) is NOT stable across two calls for the
@@ -252,8 +257,6 @@ def _anonymize_tree(
     #
     #   gps_buckets : str_key -> {"x_el": element, "y_el": element}
 
-    _anonymize_time(tree, anonymizer=anonymizer)
-
     _anonymize_gps(
         tree=tree,
         seed=seed,
@@ -261,12 +264,19 @@ def _anonymize_tree(
         gps_transform=gps_transform,
         anonymizer=anonymizer,
     )
+
     # ------------------------------------------------------------------
-    # Step 2: text fields
+    # Step 3: line_length
+    # ------------------------------------------------------------------
+    _anonymize_line_length(tree=tree, anonymizer=anonymizer)
+    # anonymizer=anonymizer, desc_delete=desc_delete)
+
+    # ------------------------------------------------------------------
+    # Step 4: text fields
     # ------------------------------------------------------------------
     _anonymize_text_fields(tree=tree, anonymizer=anonymizer, desc_delete=desc_delete)
     # ------------------------------------------------------------------
-    # Step 3: rdf:ID remapping (optional, off by default)
+    # Step 5: rdf:ID remapping (optional, off by default)
     # ------------------------------------------------------------------
     _anonymize_rdf(
         tree=tree,
