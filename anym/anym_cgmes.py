@@ -86,6 +86,8 @@ GPS_Y_LOCALS: Set[str] = {
 
 TIME_STAMP_LOCALS: Set[str] = {"Model.scenarioTime"}
 
+LINE_LEN_LOCALS: Set[str] = {"Conductor.length"}
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -343,6 +345,23 @@ def _anonymize_gps(
         logger.warning(
             "   %d GPS bucket(s) incomplete (x or y missing) – skipped", skipped
         )
+
+
+def _anonymize_line_length(
+    tree: etree._ElementTree,
+    *,
+    anonymizer: SeededNameAnonymizer,
+):
+    for el in tree.iter():
+        loc = _local(el.tag)
+        if loc not in LINE_LEN_LOCALS:
+            continue
+        # getting the length of the element
+        line_length = float(el.text)
+        el.text = str(1)
+        rdf_id = _get_parent_rdfinfo(el, RDF_ID)
+        anonymizer.line_mapping[rdf_id] = str(line_length)
+        print(line_length)
 
 
 def _anonymize_text_fields(
