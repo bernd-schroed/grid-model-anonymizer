@@ -466,6 +466,7 @@ def _restore_tree(
     time_rev: Dict[str, str],
     gps_map: Dict[str, dict],
     prefix: str,
+    line_map: Dict[str, str],
 ) -> None:
     """Reverse anonymization in-place."""
 
@@ -475,6 +476,8 @@ def _restore_tree(
     _restore_rdfids(tree, cim_rev=cim_rev)
     # Restore GPS
     _restore_gps(tree, gps_map=gps_map)
+    # Restore Line Lengths
+    _restore_line_length(tree, line_map=line_map)
     # Restore Time
     _restore_time(tree, time_rev=time_rev)
 
@@ -563,6 +566,21 @@ def _restore_gps(
             x_el.text = f"{old_lon:.6f}"
         if y_el is not None:
             y_el.text = f"{old_lat:.6f}"
+
+
+def _restore_line_length(
+    tree: etree._ElementTree,
+    *,
+    line_map: Dict[str, str],
+):
+    for el in tree.iter():
+        loc = _local(el.tag)
+        if loc not in LINE_LEN_LOCALS:
+            continue
+        # getting the length of the element
+        rdf_id = _get_parent_rdfinfo(el, RDF_ID)
+        line_length = float(line_map[rdf_id])
+        el.text = str(line_length)
 
 
 def _restore_time(
@@ -768,6 +786,7 @@ def restore_cgmes(
                 time_rev=time_rev,
                 gps_map=gps_map,
                 prefix=prefix,
+                line_map=line_map,
             )
             _serialise_xml(tree, path)
 
