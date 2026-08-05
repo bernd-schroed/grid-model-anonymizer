@@ -1272,7 +1272,7 @@ def restore_from_mapping(app, mapping_path: Path):
     - Restore cimRdfId
     - Restore GPS for transformed cases AFTER cim restore
     """
-    line_rev, anon_rev, time_rev, cim_rev, cim_map, gps_map, prefix = get_mappings(
+    line_rev, _, anon_rev, time_rev, cim_rev, cim_map, gps_map, prefix = get_mappings(
         mapping_path
     )
 
