@@ -232,7 +232,7 @@ def get_mappings(mapping_path: Path):
 
     prefix = data.get("prefix", "ANON_") or "ANON_"
 
-    return line_rev, anon_rev, time_rev, cim_rev, cim_map, gps_map, prefix
+    return line_rev, line_map, anon_rev, time_rev, cim_rev, cim_map, gps_map, prefix
 
 
 # ----------------------------

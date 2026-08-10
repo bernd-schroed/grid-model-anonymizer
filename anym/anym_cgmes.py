@@ -86,6 +86,8 @@ GPS_Y_LOCALS: Set[str] = {
 
 TIME_STAMP_LOCALS: Set[str] = {"Model.scenarioTime"}
 
+LINE_LEN_LOCALS: Set[str] = {"Conductor.length"}
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -108,6 +110,11 @@ def _remap_id(old_id: str, seed: str, cim_forward: Dict[str, str]) -> str:
 def _strip_hash(ref: str) -> str:
     """Remove leading '#' from an rdf:resource / rdf:about value."""
     return ref[1:] if ref.startswith("#") else ref
+
+
+def _get_parent_rdfinfo(element, rdf_tag):
+    parent = element.getparent()
+    return parent.get(rdf_tag)
 
 
 # ---------- Courtesy of Claude ------------
@@ -231,7 +238,12 @@ def _anonymize_tree(
     """
 
     # ------------------------------------------------------------------
-    # Step 1: GPS – group x/y children by their parent element
+    # Step 1: time_stamps
+    # ------------------------------------------------------------------
+    _anonymize_time(tree, anonymizer=anonymizer)
+
+    # ------------------------------------------------------------------
+    # Step 2: GPS – group x/y children by their parent element
     # ------------------------------------------------------------------
     # IMPORTANT: lxml creates a new Python proxy object on every call to
     # el.getparent(), so id(parent) is NOT stable across two calls for the
@@ -247,8 +259,6 @@ def _anonymize_tree(
     #
     #   gps_buckets : str_key -> {"x_el": element, "y_el": element}
 
-    _anonymize_time(tree, anonymizer=anonymizer)
-
     _anonymize_gps(
         tree=tree,
         seed=seed,
@@ -256,12 +266,19 @@ def _anonymize_tree(
         gps_transform=gps_transform,
         anonymizer=anonymizer,
     )
+
     # ------------------------------------------------------------------
-    # Step 2: text fields
+    # Step 3: line_length
+    # ------------------------------------------------------------------
+    _anonymize_line_length(tree=tree, anonymizer=anonymizer)
+    # anonymizer=anonymizer, desc_delete=desc_delete)
+
+    # ------------------------------------------------------------------
+    # Step 4: text fields
     # ------------------------------------------------------------------
     _anonymize_text_fields(tree=tree, anonymizer=anonymizer, desc_delete=desc_delete)
     # ------------------------------------------------------------------
-    # Step 3: rdf:ID remapping (optional, off by default)
+    # Step 5: rdf:ID remapping (optional, off by default)
     # ------------------------------------------------------------------
     _anonymize_rdf(
         tree=tree,
@@ -328,6 +345,23 @@ def _anonymize_gps(
         logger.warning(
             "   %d GPS bucket(s) incomplete (x or y missing) – skipped", skipped
         )
+
+
+def _anonymize_line_length(
+    tree: etree._ElementTree,
+    *,
+    anonymizer: SeededNameAnonymizer,
+):
+    for el in tree.iter():
+        loc = _local(el.tag)
+        if loc not in LINE_LEN_LOCALS:
+            continue
+        # getting the length of the element
+        line_length = float(el.text)
+        el.text = str(1)
+        rdf_id = _get_parent_rdfinfo(el, RDF_ID)
+        anonymizer.line_mapping[rdf_id] = str(line_length)
+        print(line_length)
 
 
 def _anonymize_text_fields(
@@ -432,6 +466,7 @@ def _restore_tree(
     time_rev: Dict[str, str],
     gps_map: Dict[str, dict],
     prefix: str,
+    line_map: Dict[str, str],
 ) -> None:
     """Reverse anonymization in-place."""
 
@@ -441,6 +476,8 @@ def _restore_tree(
     _restore_rdfids(tree, cim_rev=cim_rev)
     # Restore GPS
     _restore_gps(tree, gps_map=gps_map)
+    # Restore Line Lengths
+    _restore_line_length(tree, line_map=line_map)
     # Restore Time
     _restore_time(tree, time_rev=time_rev)
 
@@ -529,6 +566,21 @@ def _restore_gps(
             x_el.text = f"{old_lon:.6f}"
         if y_el is not None:
             y_el.text = f"{old_lat:.6f}"
+
+
+def _restore_line_length(
+    tree: etree._ElementTree,
+    *,
+    line_map: Dict[str, str],
+):
+    for el in tree.iter():
+        loc = _local(el.tag)
+        if loc not in LINE_LEN_LOCALS:
+            continue
+        # getting the length of the element
+        rdf_id = _get_parent_rdfinfo(el, RDF_ID)
+        line_length = float(line_map[rdf_id])
+        el.text = str(line_length)
 
 
 def _restore_time(
@@ -707,7 +759,9 @@ def restore_cgmes(
 
     logger.info("=== anym_cgmes.py: Start Restore ===")
 
-    _, anon_rev, time_rev, cim_rev, __, gps_map, prefix = get_mappings(mapping_path)
+    _, line_map, anon_rev, time_rev, cim_rev, __, gps_map, prefix = get_mappings(
+        mapping_path
+    )
 
     with tempfile.TemporaryDirectory() as tmp_str:
         tmp_dir = Path(tmp_str)
@@ -732,6 +786,7 @@ def restore_cgmes(
                 time_rev=time_rev,
                 gps_map=gps_map,
                 prefix=prefix,
+                line_map=line_map,
             )
             _serialise_xml(tree, path)
 
