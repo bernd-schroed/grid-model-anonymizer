@@ -181,6 +181,7 @@ class SeededNameAnonymizer:
         # if the new time is higher than the maximum limit subtract old_time from time_adding
         if new_time >= 2**32:  # internal edge value for time is 2**32
             new_time = self.time_adding - old_time
+        self.time_mapping[str(old_time)] = str(new_time)
         return new_time
 
 
@@ -227,6 +228,28 @@ def load_mapping_json(path: Path) -> dict:
         data["anon_mapping"] = merged
 
     return data
+
+
+def get_mappings(mapping_path: Path):
+    data = load_mapping_json(mapping_path)
+
+    line_map: Dict[str, str] = data.get("line_mapping", {}) or {}  # original -> anon
+    line_rev: Dict[str, str] = {v: k for k, v in line_map.items()}  # anon -> original
+
+    anon_map: Dict[str, str] = data.get("anon_mapping", {}) or {}  # original -> anon
+    anon_rev: Dict[str, str] = {v: k for k, v in anon_map.items()}  # anon -> original
+
+    time_map: Dict[str, str] = data.get("time_mapping", {}) or {}  # old -> new
+    time_rev: Dict[str, str] = {v: k for k, v in time_map.items()}  # anon -> original
+
+    cim_map: Dict[str, str] = data.get("cimRdfId_mapping", {}) or {}  # old -> new
+    cim_rev: Dict[str, str] = {v: k for k, v in cim_map.items()}  # new -> old
+
+    gps_map: Dict[str, dict] = data.get("gps_mapping", {}) or {}
+
+    prefix = data.get("prefix", "ANON_") or "ANON_"
+
+    return line_rev, line_map, anon_rev, time_rev, cim_rev, cim_map, gps_map, prefix
 
 
 # ----------------------------

@@ -69,7 +69,7 @@ from utils import (
     _obj_unit_from_name,
     _p,
     _scale_back_to_valid_geo,
-    load_mapping_json,
+    get_mappings,
     save_mapping_json,
 )
 
@@ -965,7 +965,6 @@ def anonymize_time(obj, anonymizer):
     old_time = int(_get_float_attr(obj, "iStudyTime"))
     new_time = anonymizer.add_time(old_time)
     safe_set(obj, "iStudyTime", new_time)
-    anonymizer.time_mapping[str(old_time)] = str(new_time)
 
 
 # ----------------------------
@@ -1305,23 +1304,9 @@ def restore_from_mapping(app, mapping_path: Path):
     - Restore cimRdfId
     - Restore GPS for transformed cases AFTER cim restore
     """
-    data = load_mapping_json(mapping_path)
-
-    line_map: Dict[str, str] = data.get("line_mapping", {}) or {}  # original -> anon
-    line_rev: Dict[str, str] = {v: k for k, v in line_map.items()}  # anon -> original
-
-    anon_map: Dict[str, str] = data.get("anon_mapping", {}) or {}  # original -> anon
-    anon_rev: Dict[str, str] = {v: k for k, v in anon_map.items()}  # anon -> original
-
-    time_map: Dict[str, str] = data.get("time_mapping", {}) or {}  # old -> new
-    time_rev: Dict[str, str] = {v: k for k, v in time_map.items()}  # anon -> original
-
-    cim_map: Dict[str, str] = data.get("cimRdfId_mapping", {}) or {}  # old -> new
-    cim_rev: Dict[str, str] = {v: k for k, v in cim_map.items()}  # new -> old
-
-    gps_map: Dict[str, dict] = data.get("gps_mapping", {}) or {}
-
-    prefix = data.get("prefix", "ANON_") or "ANON_"
+    line_rev, _, anon_rev, time_rev, cim_rev, cim_map, gps_map, prefix = get_mappings(
+        mapping_path
+    )
 
     objects = collect_unique_objects_for_anonymization(app)
     # ---------------------------------------------------------
