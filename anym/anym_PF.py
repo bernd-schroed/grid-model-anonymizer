@@ -75,6 +75,13 @@ from utils import (
 
 logger = logging.getLogger(" anym_pf.py")
 
+IMPEDANCE_TYPES = [
+    "rline",
+    "xline",
+    "rline0",
+    "xline0",
+]  # do the 0 impedances actually need to be reset?
+
 
 # ----------------------------
 # power factory version check
@@ -869,14 +876,8 @@ def set_impedances(old_type: object, new_type: object, ratio: float) -> None:
     old_type, new_type : the line type objects with the the old impedance and the new
     ratio              : the ratio between their impedances
     """
-    impedance_types = [
-        "rline",
-        "xline",
-        "rline0",
-        "xline0",
-    ]  # do the 0 impedances actually need to be reset?
 
-    for impedance_type in impedance_types:
+    for impedance_type in IMPEDANCE_TYPES:
         impedance_value_per_km = _get_float_attr(old_type, impedance_type)
         if impedance_value_per_km is not None:
             new_impedance_per_km = impedance_value_per_km * ratio
