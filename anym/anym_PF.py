@@ -868,30 +868,38 @@ def _gps_apply_and_record(
 # ----------------------------
 
 
-def alter_impedances(line_obj: object, seed: str) -> None:
+def alter_impedances(line_obj: object, anonymizer: SeededNameAnonymizer) -> None:
     """
     Alters impedances for a given line object by appliying a random factor to the original impedance
 
     Parameters:
     line_obj : object
         The line object for which to alter impedances
-    seed : str
-        The seed for random number generation
+    anonymizer : SeededNameAnonymizer
+        The anonymizer object for storing mapping information and getting seed for randomization
     """
+    mapping: Dict[str, str] = {}
+    obj_name = _get_loc_name(line_obj)
+
     for impedance_type in IMPEDANCE_TYPES:
         impedance_value_per_km = _get_float_attr(line_obj, impedance_type)
-        obj_name = _get_loc_name(line_obj)
 
-        alteration_seed = _seed_unit(
-            seed=seed, tag=f"impedance_alteration_{impedance_type}_{obj_name}"
-        )
-        alteration_factor = 1.0 + (alteration_seed - 0.5) * 0.2
+        if impedance_value_per_km is None:
+            return
 
-        if impedance_value_per_km is not None:
+        else:
+            alteration_seed = _seed_unit(
+                seed=anonymizer.seed,
+                tag=f"impedance_alteration_{impedance_type}_{obj_name}",
+            )
+            alteration_factor = 1.0 + (alteration_seed - 0.5) * 0.2
             new_impedance_per_km = impedance_value_per_km * alteration_factor
+            mapping[impedance_type] = str(alteration_factor)
             safe_set(
                 line_obj, impedance_type, float(new_impedance_per_km), verbose=False
             )
+
+    anonymizer.impedance_mapping[obj_name] = mapping
 
 
 def set_impedances(old_type: object, new_type: object, ratio: float) -> None:
@@ -1115,7 +1123,7 @@ def anonymize_objects(
                 orig_cim_id=orig_cim,
                 orig_loc_name_for_jitter=orig_loc,
             )
-            alter_impedances(obj, seed=seed)
+            alter_impedances(obj, anonymizer=anonymizer)
             set_line_length(obj, anonymizer=anonymizer)
     finally:
         _pf_bulk_mode_end(app)

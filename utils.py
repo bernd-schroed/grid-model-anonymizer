@@ -104,6 +104,8 @@ class SeededNameAnonymizer:
             self.time_adding = -self.time_adding
         self.time_mapping: Dict[str, str] = {}
 
+        self.impedance_mapping: Dict[str, dict] = {}
+
     def translate_attr(self, attr: str, value: str) -> str:  # type: ignore # pylint:disable=unused-argument
         """
         Anonymize an attribute value via the unified string mapping.
@@ -201,6 +203,7 @@ def save_mapping_json(path: Path, anonymizer: SeededNameAnonymizer):
         # keep separate
         "cimRdfId_mapping": anonymizer.cim_forward,
         "gps_mapping": anonymizer.gps_mapping,
+        "impedance_mapping": anonymizer.impedance_mapping,
     }
     path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
 
