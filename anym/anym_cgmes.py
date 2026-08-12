@@ -759,7 +759,7 @@ def restore_cgmes(
 
     logger.info("=== anym_cgmes.py: Start Restore ===")
 
-    _, line_map, anon_rev, time_rev, cim_rev, __, gps_map, prefix = get_mappings(
+    line_map, anon_rev, time_rev, cim_rev, __, gps_map, prefix = get_mappings(
         mapping_path
     )
 

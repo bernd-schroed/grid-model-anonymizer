@@ -203,7 +203,6 @@ def save_mapping_json(path: Path, anonymizer: SeededNameAnonymizer):
         # keep separate
         "cimRdfId_mapping": anonymizer.cim_forward,
         "gps_mapping": anonymizer.gps_mapping,
-        "impedance_mapping": anonymizer.impedance_mapping,
     }
     path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
 
@@ -236,8 +235,9 @@ def load_mapping_json(path: Path) -> dict:
 def get_mappings(mapping_path: Path):
     data = load_mapping_json(mapping_path)
 
-    line_map: Dict[str, str] = data.get("line_mapping", {}) or {}  # original -> anon
-    line_rev: Dict[str, str] = {v: k for k, v in line_map.items()}  # anon -> original
+    line_map: Dict[str, Dict[str, str]] = (
+        data.get("line_mapping", {}) or {}
+    )  # original -> anon
 
     anon_map: Dict[str, str] = data.get("anon_mapping", {}) or {}  # original -> anon
     anon_rev: Dict[str, str] = {v: k for k, v in anon_map.items()}  # anon -> original
@@ -252,7 +252,15 @@ def get_mappings(mapping_path: Path):
 
     prefix = data.get("prefix", "ANON_") or "ANON_"
 
-    return line_rev, line_map, anon_rev, time_rev, cim_rev, cim_map, gps_map, prefix
+    return (
+        line_map,
+        anon_rev,
+        time_rev,
+        cim_rev,
+        cim_map,
+        gps_map,
+        prefix,
+    )
 
 
 # ----------------------------
