@@ -45,7 +45,7 @@ import re
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from utils import SeededNameAnonymizer, load_mapping_json
+from utils.utils import SeededNameAnonymizer, load_mapping_json
 
 logger = logging.getLogger("anym_csv.py")
 

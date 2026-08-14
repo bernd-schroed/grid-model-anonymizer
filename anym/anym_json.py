@@ -45,7 +45,7 @@ import logging
 from pathlib import Path
 from typing import List, Optional
 
-from utils import SeededNameAnonymizer, load_mapping_json, save_mapping_json
+from utils.utils import SeededNameAnonymizer, load_mapping_json, save_mapping_json
 
 logger = logging.getLogger("anym_json.py")
 

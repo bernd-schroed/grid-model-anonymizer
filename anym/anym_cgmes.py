@@ -40,7 +40,7 @@ from typing import Dict, List, Set, Tuple
 
 from lxml import etree
 
-from utils import (
+from utils.utils import (
     SeededNameAnonymizer,
     _build_geo_transform,
     _generate_seeded_uuid,
