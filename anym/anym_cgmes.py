@@ -48,6 +48,7 @@ from utils import (
     _meters_to_deg_lon,
     _obj_unit_from_name,
     _scale_back_to_valid_geo,
+    _seed_unit,
     get_mappings,
     save_mapping_json,
 )
@@ -362,16 +363,36 @@ def _anonymize_line_length(
     *,
     anonymizer: SeededNameAnonymizer,
 ):
+
+    mapping: Dict[str, float] = {}
     for el in tree.iter():
         loc = _local(el.tag)
         if loc not in LINE_SPECS_LOCALS:
             continue
         # getting the length of the element
-        line_length = float(el.text)
-        el.text = str(1)
-        rdf_id = _get_parent_rdfinfo(el, RDF_ID)
-        anonymizer.line_mapping[rdf_id] = str(line_length)
-        print(line_length)
+        elem_value = float(el.text)
+        cur_rdf_id = _get_parent_rdfinfo(el, RDF_ID)
+
+        if loc == "Conductor.length":
+            mapping[loc] = elem_value
+            el.text = str(1)
+            anonymizer.line_mapping.setdefault(
+                cur_rdf_id,
+                mapping,
+            )
+            mapping: Dict[str, float] = {}
+
+        else:
+            alteration_seed = _seed_unit(
+                seed=anonymizer.seed,
+                tag=f"impedance_alteration_{loc}_{cur_rdf_id}",
+            )
+            alteration_factor = 1.0 + (alteration_seed - 0.5) * 0.2
+
+            new_impedance = elem_value * alteration_factor
+            mapping[loc] = elem_value
+
+            el.text = str(new_impedance)
 
 
 def _anonymize_text_fields(
