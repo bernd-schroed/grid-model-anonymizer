@@ -550,7 +550,7 @@ def anonymize_cim_rdf_id(
     if old_id in anonymizer.cim_forward:
         new_id = anonymizer.cim_forward[old_id]
     else:
-        new_id = utils._generate_seeded_uuid(old_id, seed)
+        new_id = utils.generate_seeded_uuid(old_id, seed)
         anonymizer.cim_forward[old_id] = new_id
 
     _set_cim_rdf_id(obj, new_id)
@@ -828,23 +828,21 @@ def _gps_apply_and_record(
     base_name = orig_loc_name_for_jitter or _get_loc_name(obj)
     jitter_m = 100.0
 
-    r = utils._obj_unit_from_name(seed, "gps_jitter_r", base_name) * jitter_m
+    r = utils.obj_unit_from_name(seed, "gps_jitter_r", base_name) * jitter_m
     theta = (
-        2.0 * math.pi * utils._obj_unit_from_name(seed, "gps_jitter_theta", base_name)
+        2.0 * math.pi * utils.obj_unit_from_name(seed, "gps_jitter_theta", base_name)
     )
 
     dx_m = r * math.cos(theta)
     dy_m = r * math.sin(theta)
 
-    dlat = utils._meters_to_deg_lat(dy_m)
-    dlon = utils._meters_to_deg_lon(dx_m, new_lat)
+    dlat = utils.meters_to_deg_lat(dy_m)
+    dlon = utils.meters_to_deg_lon(dx_m, new_lat)
 
     new_lat += dlat
     new_lon += dlon
 
-    new_lat, new_lon = utils._scale_back_to_valid_geo(
-        old_lat, old_lon, new_lat, new_lon
-    )
+    new_lat, new_lon = utils.scale_back_to_valid_geo(old_lat, old_lon, new_lat, new_lon)
 
     anonymizer.gps_mapping.setdefault(
         orig_cim_id,
@@ -884,7 +882,7 @@ def set_impedances(
         if impedance_value_per_km is None:
             return
 
-        alteration_seed = utils._seed_unit(
+        alteration_seed = utils.seed_unit(
             seed=anonymizer.seed,
             tag=f"impedance_alteration_{impedance_type}_{ln_name}",
         )
@@ -1003,7 +1001,7 @@ def anonymize_objects(
     GPS runs in a second pass (after loc_name / cimRdfId changes).
     """
     anonymizer = utils.SeededNameAnonymizer(seed=seed, prefix=prefix, length=length)
-    gps_transform = utils._build_geo_transform(seed)
+    gps_transform = utils.build_geo_transform(seed)
 
     # Store original keys for the second pass:
     # python object id -> (orig_cim_id, orig_loc_name)
@@ -1025,7 +1023,7 @@ def anonymize_objects(
                 or full.endswith(".IntUser")
                 or full.startswith(r"\Lib.IntLibrary")
                 or full.endswith(".IntFltcases")
-                or not utils._has_suffix(full)
+                or not utils.has_suffix(full)
             ):
                 continue
 
@@ -1476,7 +1474,7 @@ def _import_pfd_into_current_user(app, in_path: Path):
     user = app.GetCurrentUser()
 
     import_obj = user.CreateObject("CompfdImport", "Import")
-    import_obj.SetAttribute("e:g_file", utils._p(in_path))
+    import_obj.SetAttribute("e:g_file", utils.get_p(in_path))
     import_obj.g_target = user
 
     rc = import_obj.Execute()
@@ -1533,7 +1531,7 @@ def _export_project_to_pfd(app, out_path: Path):
         raise RuntimeError("ComPfdexport not found (StudyCase).")
 
     pfd_export_obj.g_objects = [g_object]
-    pfd_export_obj.g_file = utils._p(out_path)
+    pfd_export_obj.g_file = utils.get_p(out_path)
 
     pfd_export_obj.exportCurrentState = 1
     pfd_export_obj.g_undo = 0

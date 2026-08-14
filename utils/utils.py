@@ -266,7 +266,7 @@ def get_mappings(mapping_path: Path):
 # ----------------------------
 # Deterministic CIM id
 # ----------------------------
-def _generate_seeded_uuid(old_id: str, seed: str) -> str:
+def generate_seeded_uuid(old_id: str, seed: str) -> str:
     clean = str(old_id).lstrip("_")
     payload = (str(seed) + clean).encode("utf-8")
     digest = hashlib.sha256(payload).hexdigest()
@@ -280,7 +280,7 @@ def _u(tag: str, seed: str) -> float:
     return (int(h[:16], 16) % 10_000_000) / 10_000_000.0
 
 
-def _build_geo_transform(seed: str, max_shift_frac: float = 0.45):
+def build_geo_transform(seed: str, max_shift_frac: float = 0.45):
     """
     Rotation + Translation im normalisierten Koordinatenraum.
 
@@ -318,24 +318,24 @@ def _build_geo_transform(seed: str, max_shift_frac: float = 0.45):
     return transform
 
 
-def _obj_unit_from_name(seed: str, tag: str, name: str) -> float:
+def obj_unit_from_name(seed: str, tag: str, name: str) -> float:
     key = f"{seed}|{tag}|{name}"
     h = hashlib.sha256(key.encode("utf-8")).hexdigest()
     x = int(h[:16], 16)
     return (x % 10_000_000) / 10_000_000.0
 
 
-def _meters_to_deg_lat(m: float) -> float:
+def meters_to_deg_lat(m: float) -> float:
     return m / 111_320.0
 
 
-def _meters_to_deg_lon(m: float, lat_deg: float) -> float:
+def meters_to_deg_lon(m: float, lat_deg: float) -> float:
     coslat = abs(math.cos(math.radians(lat_deg)))
     coslat = max(0.1, coslat)
     return m / (111_320.0 * coslat)
 
 
-def _scale_back_to_valid_geo(
+def scale_back_to_valid_geo(
     old_lat: float,
     old_lon: float,
     new_lat: float,
@@ -358,7 +358,7 @@ def _scale_back_to_valid_geo(
     return old_lat + scale * dlat, old_lon + scale * dlon
 
 
-def _p(p: Path) -> str:
+def get_p(p: Path) -> str:
     return os.fspath(Path(p).resolve())
 
 
@@ -367,12 +367,12 @@ def _seed_hash(seed: str, tag: str) -> int:
     return int(h[:16], 16)
 
 
-def _seed_unit(seed: str, tag: str) -> float:
+def seed_unit(seed: str, tag: str) -> float:
     x = _seed_hash(seed, tag)
     return (x % 10_000_000) / 10_000_000.0
 
 
-def _has_suffix(full: str) -> bool:
+def has_suffix(full: str) -> bool:
     """
     Checks isf the string as a suffix (.txt for example). By going through the string in reverse
     order and checking if the character is a dot. If a backslash comes before the dot it is

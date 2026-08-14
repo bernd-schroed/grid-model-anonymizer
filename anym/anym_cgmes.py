@@ -115,7 +115,7 @@ def _remap_id(old_id: str, seed: str, cim_forward: Dict[str, str]) -> str:
     """Deterministically remap a single rdf:ID string (for --remap-ids mode)."""
     if old_id in cim_forward:
         return cim_forward[old_id]
-    new_id = utils._generate_seeded_uuid(old_id, seed)
+    new_id = utils.generate_seeded_uuid(old_id, seed)
     cim_forward[old_id] = new_id
     return new_id
 
@@ -209,18 +209,14 @@ def _apply_gps_pair(
 
     # Global rotation + per-object jitter (up to 100 m)
     new_lat, new_lon = gps_transform(old_lat, old_lon)
-    r_m = utils._obj_unit_from_name(seed, "cgmes_gps_r", parent_id) * 100.0
-    theta = (
-        2.0 * math.pi * utils._obj_unit_from_name(seed, "cgmes_gps_theta", parent_id)
-    )
-    new_lat += utils._meters_to_deg_lat(r_m * math.sin(theta))
-    new_lon += utils._meters_to_deg_lon(r_m * math.cos(theta), new_lat)
+    r_m = utils.obj_unit_from_name(seed, "cgmes_gps_r", parent_id) * 100.0
+    theta = 2.0 * math.pi * utils.obj_unit_from_name(seed, "cgmes_gps_theta", parent_id)
+    new_lat += utils.meters_to_deg_lat(r_m * math.sin(theta))
+    new_lon += utils.meters_to_deg_lon(r_m * math.cos(theta), new_lat)
 
     # Scale back the shift vector if the result falls outside the valid
     # geographic range, preserving the shift direction.
-    new_lat, new_lon = utils._scale_back_to_valid_geo(
-        old_lat, old_lon, new_lat, new_lon
-    )
+    new_lat, new_lon = utils.scale_back_to_valid_geo(old_lat, old_lon, new_lat, new_lon)
 
     anonymizer.gps_mapping[parent_id] = {
         "old": [old_lat, old_lon],
@@ -389,7 +385,7 @@ def _anonymize_line_length(
             mapping: Dict[str, float] = {}
 
         else:
-            alteration_seed = utils._seed_unit(
+            alteration_seed = utils.seed_unit(
                 seed=anonymizer.seed,
                 tag=f"impedance_alteration_{loc}_{cur_rdf_id}",
             )
@@ -732,7 +728,7 @@ def anonymize_cgmes(
     anonymizer = utils.SeededNameAnonymizer(
         seed=seed, prefix=prefix, length=hash_length
     )
-    gps_transform = utils._build_geo_transform(seed)
+    gps_transform = utils.build_geo_transform(seed)
 
     with tempfile.TemporaryDirectory() as tmp_str:
         tmp_dir = Path(tmp_str)
