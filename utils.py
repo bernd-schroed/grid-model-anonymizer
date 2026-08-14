@@ -104,6 +104,8 @@ class SeededNameAnonymizer:
             self.time_adding = -self.time_adding
         self.time_mapping: Dict[str, str] = {}
 
+        self.impedance_mapping: Dict[str, dict] = {}
+
     def translate_attr(self, attr: str, value: str) -> str:  # type: ignore # pylint:disable=unused-argument
         """
         Anonymize an attribute value via the unified string mapping.
@@ -160,13 +162,25 @@ class SeededNameAnonymizer:
 
     def add_time(self, old_time: int) -> int:
         """
-        add a deterministic time offset to the old time, and return the new time.
-        If the new time is out of bounds, subtraction is used instead. The mapping
-        is stored in the time_mapping dict for later reversal.
+        adds the time adding value to the given time. Both are given in seconds from 01.01.1970.
+
+        Parameters
+        ----------
+        self: object
+            self object
+        old_time : int
+            The old time to be added with the time_adding
         """
+
+        # just adding both ints together
         new_time = old_time + self.time_adding
+
+        # if the new time is below 0, because of time_adding being negative
+        # subtract it instead
         if new_time < 0:
             new_time = old_time - self.time_adding
+
+        # if the new time is higher than the maximum limit subtract old_time from time_adding
         if new_time >= 2**32:  # internal edge value for time is 2**32
             new_time = self.time_adding - old_time
         self.time_mapping[str(old_time)] = str(new_time)
@@ -221,8 +235,9 @@ def load_mapping_json(path: Path) -> dict:
 def get_mappings(mapping_path: Path):
     data = load_mapping_json(mapping_path)
 
-    line_map: Dict[str, str] = data.get("line_mapping", {}) or {}  # original -> anon
-    line_rev: Dict[str, str] = {v: k for k, v in line_map.items()}  # anon -> original
+    line_map: Dict[str, Dict[str, str]] = (
+        data.get("line_mapping", {}) or {}
+    )  # original -> anon
 
     anon_map: Dict[str, str] = data.get("anon_mapping", {}) or {}  # original -> anon
     anon_rev: Dict[str, str] = {v: k for k, v in anon_map.items()}  # anon -> original
@@ -237,7 +252,15 @@ def get_mappings(mapping_path: Path):
 
     prefix = data.get("prefix", "ANON_") or "ANON_"
 
-    return line_rev, line_map, anon_rev, time_rev, cim_rev, cim_map, gps_map, prefix
+    return (
+        line_map,
+        anon_rev,
+        time_rev,
+        cim_rev,
+        cim_map,
+        gps_map,
+        prefix,
+    )
 
 
 # ----------------------------
@@ -347,3 +370,17 @@ def _seed_hash(seed: str, tag: str) -> int:
 def _seed_unit(seed: str, tag: str) -> float:
     x = _seed_hash(seed, tag)
     return (x % 10_000_000) / 10_000_000.0
+
+
+def _has_suffix(full: str) -> bool:
+    """
+    Checks isf the string as a suffix (.txt for example). By going through the string in reverse
+    order and checking if the character is a dot. If a backslash comes before the dot it is
+    considered a folder.
+    """
+    for char in reversed(full):
+        if char == ".":
+            return True
+        elif char == "\\":
+            return False
+    raise AttributeError("Full Objectname is neither Folder or Object.")

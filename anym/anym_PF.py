@@ -1,4 +1,3 @@
-# pylint:disable=too-many-lines
 """
 anym_pf.py - PowerFactory (.pfd) anonymizer
 ============================================
@@ -64,19 +63,30 @@ from utils import (
     SeededNameAnonymizer,
     _build_geo_transform,
     _generate_seeded_uuid,
+    _has_suffix,
     _meters_to_deg_lat,
     _meters_to_deg_lon,
     _obj_unit_from_name,
     _p,
     _scale_back_to_valid_geo,
+    _seed_unit,
     get_mappings,
     save_mapping_json,
 )
 
 logger = logging.getLogger(" anym_pf.py")
 
+IMPEDANCE_TYPES = [
+    "rline",
+    "xline",
+    "rline0",
+    "xline0",
+]  # do the 0 impedances actually need to be reset?
 
-# PowerFactory Python path
+
+# ----------------------------
+# power factory version check
+# ----------------------------
 def get_pf_version() -> Path:
     """
     Locate the newest installed PowerFactory version.
@@ -853,7 +863,18 @@ def _gps_apply_and_record(
     safe_set(obj, "GPSlon", float(new_lon), verbose=False)
 
 
-def set_impedances(old_type: object, new_type: object, ratio: float) -> None:
+# ----------------------------
+# Line Resetting Handlers
+# ----------------------------
+
+
+def set_impedances(
+    old_type: object,
+    new_type: object,
+    ratio: float,
+    anonymizer: SeededNameAnonymizer,
+    ln_name: str,
+) -> None:
     """
     For power line type resetting, set the new impedances for that line
 
@@ -862,20 +883,20 @@ def set_impedances(old_type: object, new_type: object, ratio: float) -> None:
     old_type, new_type : the line type objects with the the old impedance and the new
     ratio              : the ratio between their impedances
     """
-    impedance_types = [
-        "rline",
-        "xline",
-        "rline0",
-        "xline0",
-    ]  # do the 0 impedances actually need to be reset
 
-    for impedance_type in impedance_types:
+    for impedance_type in IMPEDANCE_TYPES:
         impedance_value_per_km = _get_float_attr(old_type, impedance_type)
-        if impedance_value_per_km is not None:
-            new_impedance_per_km = impedance_value_per_km * ratio
-            safe_set(
-                new_type, impedance_type, float(new_impedance_per_km), verbose=False
-            )
+        if impedance_value_per_km is None:
+            return
+
+        alteration_seed = _seed_unit(
+            seed=anonymizer.seed,
+            tag=f"impedance_alteration_{impedance_type}_{ln_name}",
+        )
+        alteration_factor = 1.0 + (alteration_seed - 0.5) * 0.2
+
+        new_impedance_per_km = impedance_value_per_km * ratio * alteration_factor
+        safe_set(new_type, impedance_type, float(new_impedance_per_km), verbose=False)
 
 
 def set_line_length(obj: object, anonymizer: SeededNameAnonymizer) -> None:
@@ -907,10 +928,18 @@ def set_line_length(obj: object, anonymizer: SeededNameAnonymizer) -> None:
 
     # reset the impedance, since the new line length is always 1 km the ratio = old length
     impedance_ratio = old_len / 1
-    set_impedances(ln_type, new_type, impedance_ratio)
+    set_impedances(ln_type, new_type, impedance_ratio, anonymizer, ln_name)
 
     # save the new line in the anonymizer
-    anonymizer.line_mapping[ln_name] = new_name
+    anonymizer.line_mapping.setdefault(
+        new_name,
+        {
+            "name": ln_name,
+            "length": old_len,
+        },
+    )
+    # anonymizer.line_mapping[new_name]["name"] = ln_name
+    # anonymizer.line_mapping[new_name]["length"] = old_len
 
     # reset the line data
     safe_set(obj, "dline", float(1), verbose=False)
@@ -938,32 +967,26 @@ def create_new_line_type(old_type, new_name: str):
     return new_type
 
 
+# ----------------------------
+# Time Anonymization
+# ----------------------------
+
+
 def anonymize_time(obj, anonymizer):
     """
-    Anonymize the time attribute of a study case object
+    Set a new anonymized time for powerfactory object.
 
     Parameters
     ----------
-    obj : study case object
-        The study case object
-    anonymizer : SeededNameAnonymizer
-        The anonymizer object
+    obj : type object
+        The powerfactory object to be time updated
+    anonymizer : anonymizer
+        The anonymizer object used for the anonymization
+
     """
     old_time = int(_get_float_attr(obj, "iStudyTime"))
     new_time = anonymizer.add_time(old_time)
     safe_set(obj, "iStudyTime", new_time)
-
-
-def _has_suffix(full: str) -> bool:
-    """
-    Go through the name from the back. If a dot comes before a slash, return true, otherwise false
-    """
-    for char in reversed(full):
-        if char == ".":
-            return True
-        elif char == "\\":
-            return False
-    raise AttributeError("Full Objectname is neither Folder or Object.")
 
 
 # ----------------------------
@@ -1086,6 +1109,7 @@ def anonymize_objects(
                 orig_cim_id=orig_cim,
                 orig_loc_name_for_jitter=orig_loc,
             )
+
             set_line_length(obj, anonymizer=anonymizer)
     finally:
         _pf_bulk_mode_end(app)
@@ -1186,16 +1210,14 @@ def restore_gps(
 
 def restore_times(objects: List, time_rev: Dict):
     """
-    go through all objects and if it is a Study Case restore the original timestamp from the
-    mapping
+    A function to iterate through all objects. If they are an "IntCase" they are being restored.
 
     Parameters
     ----------
-    objects: List
-        The list of all objects in the project
-    time_rev: Dict
-        The reverse mapping of the timestamps with the anonymized timestamp as key and the original
-        timestamp as value
+    objects : list of objects
+        list of all objects in the project
+    time_rev : Dict
+        Dict of the anonymized times and their original counterparts
     """
     for obj in objects:
         full = _get_full_name(obj)
@@ -1250,7 +1272,7 @@ def get_all_line_types(objects_dict: Dict[str, object]) -> Dict[str, object]:
 
 
 def restore_line_type(
-    objects_dict: Dict[str, object], line_rev: Dict[str, str]
+    objects_dict: Dict[str, object], line_map: Dict[str, str]
 ) -> None:
     """
     Restoring all old line types, line lengths and impedances
@@ -1273,21 +1295,16 @@ def restore_line_type(
             # get all the data about the line and line type
             anon_line_name = ln_type_key[:15]
 
-            line_rev_key = ln_type_key[:23]
-            orig_type_name = line_rev[line_rev_key]
+            line_map_key = ln_type_key[:23]
+            orig_type = line_map[line_map_key]
 
             anon_line_key = anon_line_name + ".ElmLne"
             line_obj = objects_dict[anon_line_key]
 
-            orig_type_key = orig_type_name + ".TypLne"
+            orig_type_key = orig_type["name"] + ".TypLne"
             orig_type_obj = all_types[orig_type_key]
 
-            # get the ratio of the impedances
-            # this correspponds to the original line length
-            anon_r = _get_float_attr(ln_type_obj, "rline")
-            orig_r = _get_float_attr(orig_type_obj, "rline")
-
-            orig_length = anon_r / orig_r
+            orig_length = orig_type["length"]
 
             # reset the line information
             safe_set(line_obj, "dline", float(orig_length), verbose=False)
@@ -1305,9 +1322,15 @@ def restore_from_mapping(app, mapping_path: Path):
     - Restore cimRdfId
     - Restore GPS for transformed cases AFTER cim restore
     """
-    line_rev, _, anon_rev, time_rev, cim_rev, cim_map, gps_map, prefix = get_mappings(
-        mapping_path
-    )
+    (
+        line_map,
+        anon_rev,
+        time_rev,
+        cim_rev,
+        cim_map,
+        gps_map,
+        prefix,
+    ) = get_mappings(mapping_path)
 
     objects = collect_unique_objects_for_anonymization(app)
     # ---------------------------------------------------------
@@ -1324,7 +1347,7 @@ def restore_from_mapping(app, mapping_path: Path):
             cim_map=cim_map,
         )
         obj_dict = make_obj_dict(objects)
-        restore_line_type(obj_dict, line_rev)
+        restore_line_type(obj_dict, line_map)
     finally:
         _pf_bulk_mode_end(app)
 
