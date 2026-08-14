@@ -939,14 +939,25 @@ def create_new_line_type(old_type, new_name: str):
 
 
 def anonymize_time(obj, anonymizer):
+    """
+    Anonymize the time attribute of a study case object
+
+    Parameters
+    ----------
+    obj : study case object
+        The study case object
+    anonymizer : SeededNameAnonymizer
+        The anonymizer object
+    """
     old_time = int(_get_float_attr(obj, "iStudyTime"))
     new_time = anonymizer.add_time(old_time)
     safe_set(obj, "iStudyTime", new_time)
 
 
 def _has_suffix(full: str) -> bool:
-    # Geh den Namen von hinten durch. WEnn ein Punkt vor Slash kommt gib true, sonst nicht
-    """ """
+    """
+    Go through the name from the back. If a dot comes before a slash, return true, otherwise false
+    """
     for char in reversed(full):
         if char == ".":
             return True
@@ -1174,6 +1185,18 @@ def restore_gps(
 
 
 def restore_times(objects: List, time_rev: Dict):
+    """
+    go through all objects and if it is a Study Case restore the original timestamp from the
+    mapping
+
+    Parameters
+    ----------
+    objects: List
+        The list of all objects in the project
+    time_rev: Dict
+        The reverse mapping of the timestamps with the anonymized timestamp as key and the original
+        timestamp as value
+    """
     for obj in objects:
         full = _get_full_name(obj)
         if full.endswith("IntCase"):
@@ -1181,6 +1204,16 @@ def restore_times(objects: List, time_rev: Dict):
 
 
 def restore_timestamp(obj, time_rev):
+    """
+    restore the original timestamp of a study case object
+
+    Parameters
+    ----------
+    obj: object
+        The study case object
+    time_rev: Dict
+        The reverse mapping of the timestamps with the anonymized timestamp as key and the original
+    """
     anym_time = int(_get_float_attr(obj, "iStudyTime"))
     orig_time = int(time_rev[str(anym_time)])
     safe_set(obj, "iStudyTime", orig_time, verbose=False)

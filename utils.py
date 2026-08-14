@@ -159,6 +159,11 @@ class SeededNameAnonymizer:
         return new_name
 
     def add_time(self, old_time: int) -> int:
+        """
+        add a deterministic time offset to the old time, and return the new time.
+        If the new time is out of bounds, subtraction is used instead. The mapping
+        is stored in the time_mapping dict for later reversal.
+        """
         new_time = old_time + self.time_adding
         if new_time < 0:
             new_time = old_time - self.time_adding
