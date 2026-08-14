@@ -45,7 +45,7 @@ import re
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from utils.utils import SeededNameAnonymizer, load_mapping_json
+from utils import utils  # import SeededNameAnonymizer, load_mapping_json
 
 logger = logging.getLogger("anym_csv.py")
 
@@ -69,7 +69,7 @@ def _clean_status(text: str) -> str:
     return _STATUS_RE.sub(" ", text).strip()
 
 
-def _anonymize_ids_in_text(text: str, anonymizer: SeededNameAnonymizer) -> str:
+def _anonymize_ids_in_text(text: str, anonymizer: utils.SeededNameAnonymizer) -> str:
     def repl(m: re.Match) -> str:
         tok = m.group(1)
         # nur anonymisieren wenn es wirklich eine ID ist (hier: nur Ziffern + optional Lz/Pz)
@@ -149,7 +149,7 @@ def transform_csv_with_mapping(
     # load or create mapping
     mapping_path = Path(mapping_path)
     if mapping_path.exists():
-        data = load_mapping_json(mapping_path)
+        data = utils.load_mapping_json(mapping_path)
         # falls seed in JSON fehlt/leer ist -> nimm den übergebenen
         if not str(data.get("seed", "")).strip():
             data["seed"] = seed
@@ -170,7 +170,7 @@ def transform_csv_with_mapping(
     anon_map: Dict[str, str] = data.get("anon_mapping", {}) or {}
     anon_rev: Dict[str, str] = {v: k for k, v in anon_map.items()}
 
-    anonymizer = SeededNameAnonymizer(seed=seed, prefix=prefix, length=length)
+    anonymizer = utils.SeededNameAnonymizer(seed=seed, prefix=prefix, length=length)
     anonymizer.forward.update(anon_map)
     anonymizer.reverse.update({v: k for k, v in anon_map.items()})
 

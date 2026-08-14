@@ -45,7 +45,9 @@ import logging
 from pathlib import Path
 from typing import List, Optional
 
-from utils.utils import SeededNameAnonymizer, load_mapping_json, save_mapping_json
+from utils import utils
+
+# utils import SeededNameAnonymizer, load_mapping_json, save_mapping_json
 
 logger = logging.getLogger("anym_json.py")
 
@@ -109,7 +111,7 @@ def save_json_file(data, file_path: str):
 
 def anonymize_json_data(
     input_json: list,
-    anonymizer: SeededNameAnonymizer,
+    anonymizer: utils.SeededNameAnonymizer,
     categories: Optional[List[str]] = None,
 ):
     """
@@ -190,11 +192,11 @@ def anonymize_json_file(
         prefered_categories = categories
     else:
         prefered_categories = _get_json_keys(data)
-    anonymizer = SeededNameAnonymizer(seed=seed, prefix="ANON_", length=10)
+    anonymizer = utils.SeededNameAnonymizer(seed=seed, prefix="ANON_", length=10)
 
     anonymized_data = anonymize_json_data(data, anonymizer, prefered_categories)
 
-    save_mapping_json(mapping_output, anonymizer)
+    utils.save_mapping_json(mapping_output, anonymizer)
     save_json_file(anonymized_data, output_json)
 
 
@@ -225,7 +227,7 @@ def restore_json_anonymization(
         If the input file is not a valid JSON.
     """
     data = load_json_file(input_json)
-    mapping_data = load_mapping_json(mapping_input)
+    mapping_data = utils.load_mapping_json(mapping_input)
 
     prefix = str(mapping_data.get("prefix", "ANON_") or "ANON_")
 

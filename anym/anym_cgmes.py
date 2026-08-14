@@ -40,18 +40,20 @@ from typing import Dict, List, Set, Tuple
 
 from lxml import etree
 
-from utils.utils import (
-    SeededNameAnonymizer,
-    _build_geo_transform,
-    _generate_seeded_uuid,
-    _meters_to_deg_lat,
-    _meters_to_deg_lon,
-    _obj_unit_from_name,
-    _scale_back_to_valid_geo,
-    _seed_unit,
-    get_mappings,
-    save_mapping_json,
-)
+from utils import utils
+
+# .utils import (
+#     SeededNameAnonymizer,
+#     _build_geo_transform,
+#     _generate_seeded_uuid,
+#     _meters_to_deg_lat,
+#     _meters_to_deg_lon,
+#     _obj_unit_from_name,
+#     _scale_back_to_valid_geo,
+#     _seed_unit,
+#     get_mappings,
+#     save_mapping_json,
+# )
 
 logger = logging.getLogger("anym_cgmes.py")
 
@@ -113,7 +115,7 @@ def _remap_id(old_id: str, seed: str, cim_forward: Dict[str, str]) -> str:
     """Deterministically remap a single rdf:ID string (for --remap-ids mode)."""
     if old_id in cim_forward:
         return cim_forward[old_id]
-    new_id = _generate_seeded_uuid(old_id, seed)
+    new_id = utils._generate_seeded_uuid(old_id, seed)
     cim_forward[old_id] = new_id
     return new_id
 
@@ -174,7 +176,7 @@ def _apply_gps_pair(
     seed: str,
     gps_delete: bool,
     gps_transform,
-    anonymizer: SeededNameAnonymizer,
+    anonymizer: utils.SeededNameAnonymizer,
     parent_id: str,
 ) -> None:
     """
@@ -207,14 +209,18 @@ def _apply_gps_pair(
 
     # Global rotation + per-object jitter (up to 100 m)
     new_lat, new_lon = gps_transform(old_lat, old_lon)
-    r_m = _obj_unit_from_name(seed, "cgmes_gps_r", parent_id) * 100.0
-    theta = 2.0 * math.pi * _obj_unit_from_name(seed, "cgmes_gps_theta", parent_id)
-    new_lat += _meters_to_deg_lat(r_m * math.sin(theta))
-    new_lon += _meters_to_deg_lon(r_m * math.cos(theta), new_lat)
+    r_m = utils._obj_unit_from_name(seed, "cgmes_gps_r", parent_id) * 100.0
+    theta = (
+        2.0 * math.pi * utils._obj_unit_from_name(seed, "cgmes_gps_theta", parent_id)
+    )
+    new_lat += utils._meters_to_deg_lat(r_m * math.sin(theta))
+    new_lon += utils._meters_to_deg_lon(r_m * math.cos(theta), new_lat)
 
     # Scale back the shift vector if the result falls outside the valid
     # geographic range, preserving the shift direction.
-    new_lat, new_lon = _scale_back_to_valid_geo(old_lat, old_lon, new_lat, new_lon)
+    new_lat, new_lon = utils._scale_back_to_valid_geo(
+        old_lat, old_lon, new_lat, new_lon
+    )
 
     anonymizer.gps_mapping[parent_id] = {
         "old": [old_lat, old_lon],
@@ -235,7 +241,7 @@ def _anonymize_tree(
     seed: str,
     gps_delete: bool,
     gps_transform,
-    anonymizer: SeededNameAnonymizer,
+    anonymizer: utils.SeededNameAnonymizer,
     desc_delete: bool,
     remap_ids: bool,
 ) -> None:
@@ -305,7 +311,7 @@ def _anonymize_gps(
     seed: str,
     gps_delete: bool,
     gps_transform,
-    anonymizer: SeededNameAnonymizer,
+    anonymizer: utils.SeededNameAnonymizer,
 ):
     def _parent_key(p: etree._Element) -> str:
         v = p.get(RDF_ID) or ""
@@ -361,7 +367,7 @@ def _anonymize_gps(
 def _anonymize_line_length(
     tree: etree._ElementTree,
     *,
-    anonymizer: SeededNameAnonymizer,
+    anonymizer: utils.SeededNameAnonymizer,
 ):
 
     mapping: Dict[str, float] = {}
@@ -383,7 +389,7 @@ def _anonymize_line_length(
             mapping: Dict[str, float] = {}
 
         else:
-            alteration_seed = _seed_unit(
+            alteration_seed = utils._seed_unit(
                 seed=anonymizer.seed,
                 tag=f"impedance_alteration_{loc}_{cur_rdf_id}",
             )
@@ -398,7 +404,7 @@ def _anonymize_line_length(
 def _anonymize_text_fields(
     tree: etree._ElementTree,
     *,
-    anonymizer: SeededNameAnonymizer,
+    anonymizer: utils.SeededNameAnonymizer,
     desc_delete: bool,
 ):
     for el in tree.iter():
@@ -423,7 +429,7 @@ def _anonymize_rdf(
     tree: etree._ElementTree,
     *,
     seed: str,
-    anonymizer: SeededNameAnonymizer,
+    anonymizer: utils.SeededNameAnonymizer,
     remap_ids: bool,
 ):
     if not remap_ids:
@@ -473,7 +479,7 @@ def _anonymize_rdf(
 def _anonymize_time(
     tree: etree._ElementTree,
     *,
-    anonymizer: SeededNameAnonymizer,
+    anonymizer: utils.SeededNameAnonymizer,
 ):
     for el in tree.iter():
         loc = _local(el.tag)
@@ -723,8 +729,10 @@ def anonymize_cgmes(
 
     logger.info("=== anym_cgmes.py: Start Anonymize ===")
 
-    anonymizer = SeededNameAnonymizer(seed=seed, prefix=prefix, length=hash_length)
-    gps_transform = _build_geo_transform(seed)
+    anonymizer = utils.SeededNameAnonymizer(
+        seed=seed, prefix=prefix, length=hash_length
+    )
+    gps_transform = utils._build_geo_transform(seed)
 
     with tempfile.TemporaryDirectory() as tmp_str:
         tmp_dir = Path(tmp_str)
@@ -756,7 +764,7 @@ def anonymize_cgmes(
         out_path.parent.mkdir(parents=True, exist_ok=True)
         _pack_bundle([(rel, path) for rel, path, _ in trees], out_path)
 
-    save_mapping_json(mapping_out_path, anonymizer)
+    utils.save_mapping_json(mapping_out_path, anonymizer)
     logger.info("  Mapping saved   : %s", mapping_out_path)
     logger.info("  Output          : %s", out_path)
     logger.info("  Names anonymized: %d", len(anonymizer.forward))
@@ -790,7 +798,7 @@ def restore_cgmes(
 
     logger.info("=== anym_cgmes.py: Start Restore ===")
 
-    line_map, anon_rev, time_rev, cim_rev, __, gps_map, prefix = get_mappings(
+    line_map, anon_rev, time_rev, cim_rev, __, gps_map, prefix = utils.get_mappings(
         mapping_path
     )
 

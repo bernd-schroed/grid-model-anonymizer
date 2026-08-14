@@ -59,20 +59,7 @@ from typing import Dict, List, Optional, Tuple
 
 import psutil
 
-from utils.utils import (
-    SeededNameAnonymizer,
-    _build_geo_transform,
-    _generate_seeded_uuid,
-    _has_suffix,
-    _meters_to_deg_lat,
-    _meters_to_deg_lon,
-    _obj_unit_from_name,
-    _p,
-    _scale_back_to_valid_geo,
-    _seed_unit,
-    get_mappings,
-    save_mapping_json,
-)
+from utils import utils
 
 logger = logging.getLogger(" anym_pf.py")
 
@@ -546,7 +533,9 @@ def _search_by_full_name_after(app, full_name_after: str):
 # ----------------------------
 # Anonymize primitives
 # ----------------------------
-def anonymize_cim_rdf_id(obj, seed: str, anonymizer: SeededNameAnonymizer) -> None:
+def anonymize_cim_rdf_id(
+    obj, seed: str, anonymizer: utils.SeededNameAnonymizer
+) -> None:
     """
     Deterministically remap an object's cimRdfId and record the mapping.
 
@@ -561,7 +550,7 @@ def anonymize_cim_rdf_id(obj, seed: str, anonymizer: SeededNameAnonymizer) -> No
     if old_id in anonymizer.cim_forward:
         new_id = anonymizer.cim_forward[old_id]
     else:
-        new_id = _generate_seeded_uuid(old_id, seed)
+        new_id = utils._generate_seeded_uuid(old_id, seed)
         anonymizer.cim_forward[old_id] = new_id
 
     _set_cim_rdf_id(obj, new_id)
@@ -570,7 +559,7 @@ def anonymize_cim_rdf_id(obj, seed: str, anonymizer: SeededNameAnonymizer) -> No
 def anonymize_string_fields(
     obj,
     *,
-    anonymizer: SeededNameAnonymizer,
+    anonymizer: utils.SeededNameAnonymizer,
     fields: List[str],
     empty_as_zero: bool = True,
 ):
@@ -601,7 +590,9 @@ def anonymize_string_fields(
             _set_str_attr(obj, attr, new_s)
 
 
-def _make_unique_if_needed(obj, desired: str, anonymizer: SeededNameAnonymizer) -> str:
+def _make_unique_if_needed(
+    obj, desired: str, anonymizer: utils.SeededNameAnonymizer
+) -> str:
     old = _get_loc_name(obj)
     full = _get_full_name(obj)
     exception_list = [
@@ -652,7 +643,7 @@ def _make_unique_if_needed(obj, desired: str, anonymizer: SeededNameAnonymizer) 
 # ----------------------------
 # DESC handling
 # ----------------------------
-def _sanitize_desc(obj, desc: bool, anonymizer: SeededNameAnonymizer):
+def _sanitize_desc(obj, desc: bool, anonymizer: utils.SeededNameAnonymizer):
     """
     desc=True  -> delete description (write 'Deleted')
     desc=False -> anonymize description (token-based, reversible via anon_mapping)
@@ -728,7 +719,7 @@ def _desc_tokenize_keep_delims(s: str) -> List[Tuple[str, bool]]:
     return items
 
 
-def _desc_anonymize(desc_value: str, anonymizer: "SeededNameAnonymizer") -> str:
+def _desc_anonymize(desc_value: str, anonymizer: utils.SeededNameAnonymizer) -> str:
     seq = _desc_tokenize_keep_delims(desc_value)
     if not seq:
         return desc_value if desc_value is not None else ""
@@ -784,7 +775,7 @@ def _gps_apply_and_record(
     seed: str,
     gps_delete: bool,
     gps_transform,
-    anonymizer: SeededNameAnonymizer,
+    anonymizer: utils.SeededNameAnonymizer,
     orig_cim_id: Optional[str],
     orig_loc_name_for_jitter: Optional[str],
 ):
@@ -837,19 +828,23 @@ def _gps_apply_and_record(
     base_name = orig_loc_name_for_jitter or _get_loc_name(obj)
     jitter_m = 100.0
 
-    r = _obj_unit_from_name(seed, "gps_jitter_r", base_name) * jitter_m
-    theta = 2.0 * math.pi * _obj_unit_from_name(seed, "gps_jitter_theta", base_name)
+    r = utils._obj_unit_from_name(seed, "gps_jitter_r", base_name) * jitter_m
+    theta = (
+        2.0 * math.pi * utils._obj_unit_from_name(seed, "gps_jitter_theta", base_name)
+    )
 
     dx_m = r * math.cos(theta)
     dy_m = r * math.sin(theta)
 
-    dlat = _meters_to_deg_lat(dy_m)
-    dlon = _meters_to_deg_lon(dx_m, new_lat)
+    dlat = utils._meters_to_deg_lat(dy_m)
+    dlon = utils._meters_to_deg_lon(dx_m, new_lat)
 
     new_lat += dlat
     new_lon += dlon
 
-    new_lat, new_lon = _scale_back_to_valid_geo(old_lat, old_lon, new_lat, new_lon)
+    new_lat, new_lon = utils._scale_back_to_valid_geo(
+        old_lat, old_lon, new_lat, new_lon
+    )
 
     anonymizer.gps_mapping.setdefault(
         orig_cim_id,
@@ -872,7 +867,7 @@ def set_impedances(
     old_type: object,
     new_type: object,
     ratio: float,
-    anonymizer: SeededNameAnonymizer,
+    anonymizer: utils.SeededNameAnonymizer,
     ln_name: str,
 ) -> None:
     """
@@ -889,7 +884,7 @@ def set_impedances(
         if impedance_value_per_km is None:
             return
 
-        alteration_seed = _seed_unit(
+        alteration_seed = utils._seed_unit(
             seed=anonymizer.seed,
             tag=f"impedance_alteration_{impedance_type}_{ln_name}",
         )
@@ -899,7 +894,7 @@ def set_impedances(
         safe_set(new_type, impedance_type, float(new_impedance_per_km), verbose=False)
 
 
-def set_line_length(obj: object, anonymizer: SeededNameAnonymizer) -> None:
+def set_line_length(obj: object, anonymizer: utils.SeededNameAnonymizer) -> None:
     """
     reset the line lengths and the new line type and storing it in the anonymizer
     for the mapping
@@ -1000,15 +995,15 @@ def anonymize_objects(
     gps: bool,
     prefix: str = "ANON_",
     length: int = 10,
-) -> SeededNameAnonymizer:
+) -> utils.SeededNameAnonymizer:
     """
     gps parameter meaning:
       gps=True  -> delete GPS (0/0)
       gps=False -> transform + jitter
     GPS runs in a second pass (after loc_name / cimRdfId changes).
     """
-    anonymizer = SeededNameAnonymizer(seed=seed, prefix=prefix, length=length)
-    gps_transform = _build_geo_transform(seed)
+    anonymizer = utils.SeededNameAnonymizer(seed=seed, prefix=prefix, length=length)
+    gps_transform = utils._build_geo_transform(seed)
 
     # Store original keys for the second pass:
     # python object id -> (orig_cim_id, orig_loc_name)
@@ -1030,7 +1025,7 @@ def anonymize_objects(
                 or full.endswith(".IntUser")
                 or full.startswith(r"\Lib.IntLibrary")
                 or full.endswith(".IntFltcases")
-                or not _has_suffix(full)
+                or not utils._has_suffix(full)
             ):
                 continue
 
@@ -1330,7 +1325,7 @@ def restore_from_mapping(app, mapping_path: Path):
         cim_map,
         gps_map,
         prefix,
-    ) = get_mappings(mapping_path)
+    ) = utils.get_mappings(mapping_path)
 
     objects = collect_unique_objects_for_anonymization(app)
     # ---------------------------------------------------------
@@ -1481,7 +1476,7 @@ def _import_pfd_into_current_user(app, in_path: Path):
     user = app.GetCurrentUser()
 
     import_obj = user.CreateObject("CompfdImport", "Import")
-    import_obj.SetAttribute("e:g_file", _p(in_path))
+    import_obj.SetAttribute("e:g_file", utils._p(in_path))
     import_obj.g_target = user
 
     rc = import_obj.Execute()
@@ -1538,7 +1533,7 @@ def _export_project_to_pfd(app, out_path: Path):
         raise RuntimeError("ComPfdexport not found (StudyCase).")
 
     pfd_export_obj.g_objects = [g_object]
-    pfd_export_obj.g_file = _p(out_path)
+    pfd_export_obj.g_file = utils._p(out_path)
 
     pfd_export_obj.exportCurrentState = 1
     pfd_export_obj.g_undo = 0
@@ -1631,7 +1626,7 @@ def run_powerfactory_import_export(
         length=hash_length,
     )
 
-    save_mapping_json(mapping_out_path, anonymizer)
+    utils.save_mapping_json(mapping_out_path, anonymizer)
     logger.info("Mapping saved: %s", mapping_out_path)
 
     try:
