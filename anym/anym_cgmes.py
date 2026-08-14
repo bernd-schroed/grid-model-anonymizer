@@ -86,7 +86,17 @@ GPS_Y_LOCALS: Set[str] = {
 
 TIME_STAMP_LOCALS: Set[str] = {"Model.scenarioTime"}
 
-LINE_LEN_LOCALS: Set[str] = {"Conductor.length"}
+LINE_SPECS_LOCALS: Set[str] = {
+    "Conductor.length",
+    "ACLineSegment.b0ch",
+    "ACLineSegment.bch",
+    "ACLineSegment.g0ch",
+    "ACLineSegment.gch",
+    "ACLineSegment.r",
+    "ACLineSegment.r0",
+    "ACLineSegment.x",
+    "ACLineSegment.x0",
+}
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -354,7 +364,7 @@ def _anonymize_line_length(
 ):
     for el in tree.iter():
         loc = _local(el.tag)
-        if loc not in LINE_LEN_LOCALS:
+        if loc not in LINE_SPECS_LOCALS:
             continue
         # getting the length of the element
         line_length = float(el.text)
@@ -575,7 +585,7 @@ def _restore_line_length(
 ):
     for el in tree.iter():
         loc = _local(el.tag)
-        if loc not in LINE_LEN_LOCALS:
+        if loc not in LINE_SPECS_LOCALS:
             continue
         # getting the length of the element
         rdf_id = _get_parent_rdfinfo(el, RDF_ID)
