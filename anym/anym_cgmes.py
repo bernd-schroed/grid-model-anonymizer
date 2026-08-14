@@ -610,8 +610,8 @@ def _restore_line_length(
             continue
         # getting the length of the element
         rdf_id = _get_parent_rdfinfo(el, RDF_ID)
-        line_length = float(line_map[rdf_id])
-        el.text = str(line_length)
+        orig_value = float(line_map[rdf_id][loc])
+        el.text = str(orig_value)
 
 
 def _restore_time(
