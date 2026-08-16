@@ -1,3 +1,37 @@
+"""
+pf_utils.py
+===========
+
+Helper utilities for automating DIgSILENT PowerFactory via its Python
+API.
+
+This module bundles the functionality needed to script PowerFactory
+end-to-end:
+
+- Locating a compatible PowerFactory installation and importing the
+  `powerfactory` module (`get_pf_version`, `check_python_pf_compatibility`,
+  `import_powerfactory_module`).
+- Thin wrappers around PF calls that may live on either the `pf` module
+  or the application object, plus bulk-mode helpers to speed up large
+  edits (`_call_pf_or_app`, `pf_bulk_mode_begin`, `pf_bulk_mode_end`).
+- Collecting all network-relevant PF objects in a project, including
+  their parent chains, as a basis for anonymization (`PfObjects`,
+  `parent_chain_until_network_data`, `collect_unique_objects_for_anonymization`).
+- Safe getters/setters for PF attributes that tolerate objects which
+  don't support a given attribute (`get_float_attr`, `safe_set`,
+  `get_loc_name`, `get_str_attr`, `set_str_attr`, `get_cim_rdf_id`,
+  `set_cim_rdf_id`, `get_full_name`).
+- Renaming objects uniquely and sanitizing/anonymizing free-text
+  description fields (`make_unique_if_needed`, `sanitize_desc` and the
+  related `_desc_*` helpers).
+- Project import/activate/export workflows and process management
+  (`delete_project_if_exists`, `import_pfd_into_current_user`,
+  `activate_project`, `export_project_to_pfd`, `kill_powerfactory`).
+
+Requires a local PowerFactory installation; if none is found,
+`pf` is set to `None` and PF-dependent functions will fail when called.
+"""
+
 import logging
 import re
 import sys
@@ -9,7 +43,6 @@ import psutil
 import utils
 
 logger = logging.getLogger("pf_utils.py")
-
 
 IMPEDANCE_TYPES = [
     "rline",
@@ -25,11 +58,6 @@ IMPEDANCE_TYPES = [
 def get_pf_version() -> Path:
     """
     Locate the newest installed PowerFactory version.
-
-    Scans the standard DIgSILENT install directories
-    (Program Files / Program Files (x86)) for "PowerFactory*"
-    subfolders, excluding the License Manager, and returns the path
-    of the highest version found.
 
     Returns
     -------
@@ -70,10 +98,6 @@ def check_python_pf_compatibility(powerfactory_path: Path, py_version: str) -> N
     """
     Verify that the running Python's major.minor version is supported
     by the detected PowerFactory installation.
-
-    Exits the process with an explanatory message listing the
-    compatible Python versions if py_version is not among the
-    subfolders under "<pf_path>/Python".
     """
     search_path = Path(powerfactory_path, "Python")
     possible_versions = [version.name for version in search_path.iterdir()]
@@ -86,6 +110,15 @@ def check_python_pf_compatibility(powerfactory_path: Path, py_version: str) -> N
 
 
 def import_powerfactory_module():
+    """
+    Import and return the `powerfactory` module for the detected install.
+
+    Returns
+    -------
+    module or None
+        The imported `powerfactory` module, or None if no PowerFactory
+        installation was found in the standard locations.
+    """
     pf_path = get_pf_version()
     if pf_path is False:
         pf_module = None  # pylint:disable=invalid-name
@@ -94,12 +127,12 @@ def import_powerfactory_module():
         # set python version
         python_major_version = sys.version_info.major
         python_minor_version = sys.version_info.minor
-        PY_VERSION = f"{str(python_major_version)}.{str(python_minor_version)}"
+        python_version = f"{str(python_major_version)}.{str(python_minor_version)}"
 
-        check_python_pf_compatibility(pf_path, PY_VERSION)
+        check_python_pf_compatibility(pf_path, python_version)
 
         # PowerFactory Python path
-        pf_python_path = Path(pf_path, "Python", PY_VERSION)
+        pf_python_path = Path(pf_path, "Python", python_version)
 
         sys.path.append(str(pf_python_path))
 
@@ -136,6 +169,18 @@ def _call_pf_or_app(app, name: str, *args):
 
 
 def pf_bulk_mode_begin(app):
+    """
+    Switch PowerFactory into bulk-editing mode.
+
+    Disables progress bar updates, GUI updates, and user break
+    handling, and enables the write cache, so that large numbers of
+    scripted changes run faster. Should be paired with a matching
+    call to `pf_bulk_mode_end`.
+
+    Parameters
+    ----------
+    app : the PowerFactory application object (from pf.GetApplication()).
+    """
     _call_pf_or_app(app, "SetProgressBarUpdatesEnabled", 1)
     _call_pf_or_app(app, "SetGuiUpdateEnabled", 1)
     _call_pf_or_app(app, "SetUserBreakEnabled", 1)
@@ -143,6 +188,17 @@ def pf_bulk_mode_begin(app):
 
 
 def pf_bulk_mode_end(app):
+    """
+    Leave bulk-editing mode and flush pending changes to the database.
+
+    Writes cached changes to the database, then re-enables user break
+    handling, GUI updates, and progress bar updates, undoing the
+    effects of `pf_bulk_mode_begin`.
+
+    Parameters
+    ----------
+    app : the PowerFactory application object (from pf.GetApplication()).
+    """
     _call_pf_or_app(app, "WriteChangesToDb")
     _call_pf_or_app(app, "SetWriteCacheEnabled", 0)
     _call_pf_or_app(app, "SetUserBreakEnabled", 0)
@@ -368,6 +424,14 @@ def safe_set(obj, attr, value, *, verbose: bool = False) -> bool:
 
 
 def get_loc_name(obj) -> str:
+    """
+    Safely read an object's `loc_name` attribute.
+
+    Returns
+    -------
+    str
+        The object's local name, or "" if it cannot be determined.
+    """
     try:
         return obj.GetAttribute("loc_name")
     except AttributeError:
@@ -375,6 +439,10 @@ def get_loc_name(obj) -> str:
 
 
 def _set_loc_name_only(obj, new_name: str):
+    """
+    Set an object's `loc_name` attribute directly, without uniqueness checks.
+
+    """
     try:
         return obj.SetAttribute("loc_name", new_name)
     except AttributeError:
@@ -382,6 +450,15 @@ def _set_loc_name_only(obj, new_name: str):
 
 
 def get_str_attr(obj, attr: str) -> Optional[str]:
+    """
+    Safely read a PF attribute as a string.
+
+    Returns
+    -------
+    Optional[str]
+        The attribute value as a string, "" if unset, or None if the
+        attribute is unavailable.
+    """
     try:
         if not obj.HasAttribute(attr):
             return None
@@ -410,10 +487,26 @@ def get_str_attr(obj, attr: str) -> Optional[str]:
 
 
 def set_str_attr(obj, attr: str, value: str) -> bool:
+    """
+    Safely set a PF attribute to the string form of `value`.
+
+    Returns
+    -------
+    bool
+        True if the attribute was successfully set, False otherwise.
+    """
     return safe_set(obj, attr, str(value), verbose=False)
 
 
 def get_cim_rdf_id(obj) -> List[str]:
+    """
+    Safely read an object's `cimRdfId` attribute.
+
+    Returns
+    -------
+    List[str]
+        The object's CIM RDF ID(s), or an empty list if unavailable.
+    """
     try:
         if not obj.HasAttribute("cimRdfId"):
             return []
@@ -427,10 +520,26 @@ def get_cim_rdf_id(obj) -> List[str]:
 
 
 def set_cim_rdf_id(obj, new_id: str) -> bool:
+    """
+    Safely set an object's `cimRdfId` attribute to a single-element list.
+
+    Returns
+    -------
+    bool
+        True if the attribute was successfully set, False otherwise.
+    """
     return safe_set(obj, "cimRdfId", [new_id], verbose=False)
 
 
 def get_full_name(obj) -> str:
+    """
+    Safely read an object's fully qualified PF name.
+
+    Returns
+    -------
+    str
+        The object's full PF path, or a class/name fallback string.
+    """
     try:
         return obj.GetFullName()
     except AttributeError:
@@ -438,6 +547,15 @@ def get_full_name(obj) -> str:
 
 
 def _to_project_relative(full_name: str) -> str:
+    """
+    Trim a full PF object path down to the part relative to the project.
+
+    Returns
+    -------
+    str
+        The project-relative path, or the original string if the
+        marker is absent.
+    """
     marker = r"\Network Model.IntPrjfolder"
     i = full_name.find(marker)
     if i < 0:
@@ -446,6 +564,14 @@ def _to_project_relative(full_name: str) -> str:
 
 
 def search_by_full_name_after(app, full_name_after: str):
+    """
+    Find an object in the active project by its (post-move) full name.
+
+    Returns
+    -------
+    The matching PF object, or None if there is no active project or
+    the object cannot be found.
+    """
     project = app.GetActiveProject()
     if not project:
         return None
@@ -460,6 +586,25 @@ def search_by_full_name_after(app, full_name_after: str):
 def make_unique_if_needed(
     obj, desired: str, anonymizer: utils.SeededNameAnonymizer
 ) -> str:
+    """
+    Rename `obj` to `desired`, disambiguating with a hash suffix if needed.
+
+    Parameters
+    ----------
+    obj : the PF object to rename.
+    desired : str
+        The name to try to apply.
+    anonymizer : utils.SeededNameAnonymizer
+        Used to derive a deterministic hash suffix when a plain rename
+        is not possible.
+
+    Returns
+    -------
+    str or None
+        The name that was actually applied (either `desired` or a
+        `desired_<hash>` candidate), or None if the object was skipped
+        because it's in the exception list or is a project folder.
+    """
     old = get_loc_name(obj)
     full = get_full_name(obj)
     exception_list = [
@@ -508,6 +653,19 @@ def make_unique_if_needed(
 
 
 def build_cim_index(objs: List) -> Dict[str, object]:
+    """
+    Build a lookup table from CIM RDF ID to PF object.
+
+    Parameters
+    ----------
+    objs : List
+        PF objects to index.
+
+    Returns
+    -------
+    Dict[str, object]
+        Mapping from CIM RDF ID to the corresponding PF object.
+    """
     idx: Dict[str, object] = {}
     for o in objs:
         ids = get_cim_rdf_id(o)
@@ -517,6 +675,9 @@ def build_cim_index(objs: List) -> Dict[str, object]:
 
 
 def _collapse_semicolons(s: str) -> str:
+    """
+    Collapse runs of semicolons into a single one and strip leading/trailing ones.
+    """
     s = re.sub(r";{2,}", ";", s)  # ;; oder mehr -> ;
     s = s.strip(";")
     return s
@@ -548,6 +709,19 @@ def sanitize_desc(obj, desc: bool, anonymizer: utils.SeededNameAnonymizer):
 
 
 def _desc_normalize(s: str) -> str:
+    """
+    Normalize a description string for tokenization.
+
+    Parameters
+    ----------
+    s : str
+        Raw description text, may be None.
+
+    Returns
+    -------
+    str
+        The normalized string, or "" if `s` is None.
+    """
     if s is None:
         return ""
 
@@ -568,6 +742,19 @@ def _desc_normalize(s: str) -> str:
 
 
 def _desc_tokenize_keep_delims(s: str) -> List[Tuple[str, bool]]:
+    """
+    Tokenize a description string, keeping ";" and " " as delimiter items.
+
+    Parameters
+    ----------
+    s : str
+        Description text to tokenize.
+
+    Returns
+    -------
+    List[Tuple[str, bool]]
+        The token/delimiter sequence, in original order.
+    """
     s = _desc_normalize(s)
 
     items: List[Tuple[str, bool]] = []
@@ -602,6 +789,23 @@ def _desc_tokenize_keep_delims(s: str) -> List[Tuple[str, bool]]:
 
 
 def _desc_anonymize(desc_value: str, anonymizer: utils.SeededNameAnonymizer) -> str:
+    """
+    Anonymize each word token in a description, joining tokens with ";".
+
+    Parameters
+    ----------
+    desc_value : str
+        The original description text.
+    anonymizer : utils.SeededNameAnonymizer
+        Used to translate each individual word token to an anonymized
+        equivalent.
+
+    Returns
+    -------
+    str
+        The anonymized, semicolon-delimited description. Returns
+        `desc_value` (or "") unchanged if it tokenizes to nothing.
+    """
     seq = _desc_tokenize_keep_delims(desc_value)
     if not seq:
         return desc_value if desc_value is not None else ""
@@ -626,6 +830,25 @@ def _desc_anonymize(desc_value: str, anonymizer: utils.SeededNameAnonymizer) -> 
 
 
 def _desc_restore(desc_value: str, anon_rev: Dict[str, str], prefix: str) -> str:
+    """
+    Reverse a previously anonymized description back to its original tokens.
+
+    Parameters
+    ----------
+    desc_value : str
+        The anonymized description text to restore.
+    anon_rev : Dict[str, str]
+        Reverse mapping from anonymized token to original token.
+    prefix : str
+        Prefix used to identify anonymized tokens that should be
+        looked up in `anon_rev`.
+
+    Returns
+    -------
+    str
+        The restored description. Returns `desc_value` (or "")
+        unchanged if it tokenizes to nothing.
+    """
     seq = _desc_tokenize_keep_delims(desc_value)
     if not seq:
         return desc_value if desc_value is not None else ""
@@ -656,6 +879,15 @@ def _list_projects(user):
 
 
 def delete_project_if_exists(app, project_name: str):
+    """
+    Delete the project named `project_name`, if it exists, for the current user.
+
+    Parameters
+    ----------
+    app : the PowerFactory application object (from pf.GetApplication()).
+    project_name : str
+        Local name of the project to delete.
+    """
     user = app.GetCurrentUser()
     prjs = _list_projects(user)
 
@@ -677,6 +909,20 @@ def delete_project_if_exists(app, project_name: str):
 
 
 def import_pfd_into_current_user(app, in_path: Path):
+    """
+    Import a .pfd file into the current PF user's folder.
+
+    Parameters
+    ----------
+    app : the PowerFactory application object (from pf.GetApplication()).
+    in_path : Path
+        Path to the .pfd file to import.
+
+    Raises
+    ------
+    RuntimeError
+        If the import returns a non-zero return code.
+    """
     user = app.GetCurrentUser()
 
     import_obj = user.CreateObject("CompfdImport", "Import")
@@ -694,6 +940,25 @@ def import_pfd_into_current_user(app, in_path: Path):
 
 
 def activate_project(app, project_name: str):
+    """
+    Activate a project by name, with fallbacks for renamed anonymized copies.
+
+    Parameters
+    ----------
+    app : the PowerFactory application object (from pf.GetApplication()).
+    project_name : str
+        Local name of the project to activate.
+
+    Returns
+    -------
+    The now-active PF project object.
+
+    Raises
+    ------
+    RuntimeError
+        If the project cannot be activated by any of the above
+        strategies.
+    """
     rc = app.ActivateProject(project_name)
     if rc == 0:
         return app.GetActiveProject()
@@ -728,6 +993,20 @@ def activate_project(app, project_name: str):
 
 
 def export_project_to_pfd(app, out_path: Path):
+    """
+    Export the active project to a .pfd file and delete it afterward.
+
+    Parameters
+    ----------
+    app : the PowerFactory application object (from pf.GetApplication()).
+    out_path : Path
+        Destination path for the exported .pfd file.
+
+    Raises
+    ------
+    RuntimeError
+        If no ComPfdexport object can be obtained from the study case.
+    """
     g_object = app.GetActiveProject()
     if g_object:
         g_object.Deactivate()
