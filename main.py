@@ -68,7 +68,8 @@ from pathlib import Path
 from anym.anym_cgmes import anonymize_cgmes, restore_cgmes
 from anym.anym_csv import transform_csv_with_mapping
 from anym.anym_json import anonymize_json_file, restore_json_anonymization
-from anym.anym_pf import run_powerfactory_import_export, run_powerfactory_restore
+from anym.anym_pf import run_powerfactory_import_export
+from restore.restore_pf import run_powerfactory_restore
 
 logger = logging.getLogger("Main.py")
 
