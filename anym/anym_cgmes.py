@@ -42,19 +42,6 @@ from lxml import etree
 
 from utils import utils
 
-# .utils import (
-#     SeededNameAnonymizer,
-#     _build_geo_transform,
-#     _generate_seeded_uuid,
-#     _meters_to_deg_lat,
-#     _meters_to_deg_lon,
-#     _obj_unit_from_name,
-#     _scale_back_to_valid_geo,
-#     _seed_unit,
-#     get_mappings,
-#     save_mapping_json,
-# )
-
 logger = logging.getLogger("anym_cgmes.py")
 
 # ---------------------------------------------------------------------------
