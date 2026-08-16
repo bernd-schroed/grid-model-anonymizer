@@ -136,7 +136,7 @@ def import_powerfactory_module():
 
         sys.path.append(str(pf_python_path))
 
-        import powerfactory as pf_module  # type: ignore # pylint: disable=import-error,wrong-import-position,wrong-import-order
+        import powerfactory as pf_module  # type: ignore # pylint: disable=import-error,wrong-import-position,wrong-import-order, import-outside-toplevel
 
     return pf_module
 
@@ -439,10 +439,7 @@ def get_loc_name(obj) -> str:
 
 
 def _set_loc_name_only(obj, new_name: str):
-    """
-    Set an object's `loc_name` attribute directly, without uniqueness checks.
-
-    """
+    """Set an object's `loc_name` attribute directly, without uniqueness checks."""
     try:
         return obj.SetAttribute("loc_name", new_name)
     except AttributeError:
@@ -547,15 +544,7 @@ def get_full_name(obj) -> str:
 
 
 def _to_project_relative(full_name: str) -> str:
-    """
-    Trim a full PF object path down to the part relative to the project.
-
-    Returns
-    -------
-    str
-        The project-relative path, or the original string if the
-        marker is absent.
-    """
+    """Trim a full PF object path down to the part relative to the project."""
     marker = r"\Network Model.IntPrjfolder"
     i = full_name.find(marker)
     if i < 0:
@@ -709,19 +698,7 @@ def sanitize_desc(obj, desc: bool, anonymizer: utils.SeededNameAnonymizer):
 
 
 def _desc_normalize(s: str) -> str:
-    """
-    Normalize a description string for tokenization.
-
-    Parameters
-    ----------
-    s : str
-        Raw description text, may be None.
-
-    Returns
-    -------
-    str
-        The normalized string, or "" if `s` is None.
-    """
+    """Normalize a description string for tokenization."""
     if s is None:
         return ""
 
@@ -742,19 +719,7 @@ def _desc_normalize(s: str) -> str:
 
 
 def _desc_tokenize_keep_delims(s: str) -> List[Tuple[str, bool]]:
-    """
-    Tokenize a description string, keeping ";" and " " as delimiter items.
-
-    Parameters
-    ----------
-    s : str
-        Description text to tokenize.
-
-    Returns
-    -------
-    List[Tuple[str, bool]]
-        The token/delimiter sequence, in original order.
-    """
+    """Tokenize a description string, keeping ";" and " " as delimiter items."""
     s = _desc_normalize(s)
 
     items: List[Tuple[str, bool]] = []
@@ -789,23 +754,7 @@ def _desc_tokenize_keep_delims(s: str) -> List[Tuple[str, bool]]:
 
 
 def _desc_anonymize(desc_value: str, anonymizer: utils.SeededNameAnonymizer) -> str:
-    """
-    Anonymize each word token in a description, joining tokens with ";".
-
-    Parameters
-    ----------
-    desc_value : str
-        The original description text.
-    anonymizer : utils.SeededNameAnonymizer
-        Used to translate each individual word token to an anonymized
-        equivalent.
-
-    Returns
-    -------
-    str
-        The anonymized, semicolon-delimited description. Returns
-        `desc_value` (or "") unchanged if it tokenizes to nothing.
-    """
+    """Anonymize each word token in a description, joining tokens with ";"."""
     seq = _desc_tokenize_keep_delims(desc_value)
     if not seq:
         return desc_value if desc_value is not None else ""
@@ -830,25 +779,7 @@ def _desc_anonymize(desc_value: str, anonymizer: utils.SeededNameAnonymizer) -> 
 
 
 def _desc_restore(desc_value: str, anon_rev: Dict[str, str], prefix: str) -> str:
-    """
-    Reverse a previously anonymized description back to its original tokens.
 
-    Parameters
-    ----------
-    desc_value : str
-        The anonymized description text to restore.
-    anon_rev : Dict[str, str]
-        Reverse mapping from anonymized token to original token.
-    prefix : str
-        Prefix used to identify anonymized tokens that should be
-        looked up in `anon_rev`.
-
-    Returns
-    -------
-    str
-        The restored description. Returns `desc_value` (or "")
-        unchanged if it tokenizes to nothing.
-    """
     seq = _desc_tokenize_keep_delims(desc_value)
     if not seq:
         return desc_value if desc_value is not None else ""
