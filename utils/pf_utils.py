@@ -698,7 +698,7 @@ def sanitize_desc(obj, desc: bool, anonymizer):
         safe_set(obj, "desc", new_s, verbose=False)
 
 
-def _desc_normalize(s: str) -> str:
+def desc_normalize(s: str) -> str:
     """Normalize a description string for tokenization."""
     if s is None:
         return ""
@@ -721,7 +721,7 @@ def _desc_normalize(s: str) -> str:
 
 def _desc_tokenize_keep_delims(s: str) -> List[Tuple[str, bool]]:
     """Tokenize a description string, keeping ";" and " " as delimiter items."""
-    s = _desc_normalize(s)
+    s = desc_normalize(s)
 
     items: List[Tuple[str, bool]] = []
     buf: List[str] = []
@@ -770,7 +770,7 @@ def _desc_anonymize(desc_value: str, anonymizer) -> str:
                 continue
             out_parts.append(anonymizer.translate(tok))
 
-    out = _desc_normalize("".join(out_parts)).strip()
+    out = desc_normalize("".join(out_parts)).strip()
     out = out.replace(" ", ";")
     while ";;" in out:
         out = out.replace(";;", ";")
@@ -798,7 +798,7 @@ def _desc_restore(desc_value: str, anon_rev: Dict[str, str], prefix: str) -> str
             else:
                 out_parts.append(tok)
 
-    out = _desc_normalize("".join(out_parts)).strip()
+    out = desc_normalize("".join(out_parts)).strip()
     out = _collapse_semicolons(out)
     return out
 
