@@ -57,7 +57,22 @@ def restore_anon_tokens_in_text(text: str, anon_rev: Dict[str, str]) -> str:
     return _ANON_RE.sub(repl, text)
 
 
-def restore_gps(
+def get_coordinates(rec):
+    old = rec.get("old")
+    if not (isinstance(old, list) and len(old) == 2):
+        return None
+    old_lat, old_lon = float(old[0]), float(old[1])
+    return old_lat, old_lon
+
+
+def get_obj_by_full_name(rec, app):
+    fn = rec.get("full_name_after")
+    if isinstance(fn, str) and fn:
+        target = pf_utils.search_by_full_name_after(app, fn)
+        return target
+
+
+def restore_gps_from_deletion(
     app,
     gps_map: Dict[str, Dict],
     cim_index_current: Dict[str, object],
@@ -82,11 +97,9 @@ def restore_gps(
         if not rec.get("deleted", False):
             continue
 
-        old = rec.get("old")
-        if not (isinstance(old, list) and len(old) == 2):
+        old_lat, old_lon = get_coordinates(rec)
+        if old_lat is None:
             continue
-        old_lat, old_lon = float(old[0]), float(old[1])
-
         target = None
 
         cim_after = rec.get("cim_after")
@@ -99,9 +112,7 @@ def restore_gps(
                 target = cim_index_current.get(current_cim)
 
         if target is None:
-            fn = rec.get("full_name_after")
-            if isinstance(fn, str) and fn:
-                target = pf_utils.search_by_full_name_after(app, fn)
+            target = get_obj_by_full_name(rec, app)
 
         if target is None:
             logger.warning("Deleted-GPS target not found (orig_cim=%s)", orig_cim)
@@ -217,6 +228,25 @@ def restore_line_type(
             ln_type_obj.Delete()
 
 
+def restore_gps_from_anonymization(gps_map, cim_index_orig, app):
+    for orig_cim, rec in gps_map.items():
+        if rec.get("deleted", False):
+            continue
+
+        old_lat, old_lon = get_coordinates(rec)
+        if old_lat is None:
+            continue
+
+        target = cim_index_orig.get(orig_cim)
+        if target is None:
+            target = get_obj_by_full_name(rec, app)
+        if target is None:
+            continue
+
+        pf_utils.safe_set(target, "GPSlat", old_lat, verbose=False)
+        pf_utils.safe_set(target, "GPSlon", old_lon, verbose=False)
+
+
 def restore_from_mapping(app, mapping_path: Path):
     """
     Restore inside an already imported project using the mapping JSON:
@@ -243,7 +273,7 @@ def restore_from_mapping(app, mapping_path: Path):
 
     pf_utils.pf_bulk_mode_begin(app)
     try:
-        restore_gps(
+        restore_gps_from_deletion(
             app=app,
             gps_map=gps_map,
             cim_index_current=cim_index_current,
@@ -319,26 +349,7 @@ def restore_from_mapping(app, mapping_path: Path):
 
     pf_utils.pf_bulk_mode_begin(app)
     try:
-        for orig_cim, rec in gps_map.items():
-            if rec.get("deleted", False):
-                continue
-
-            old = rec.get("old")
-            if not (isinstance(old, list) and len(old) == 2):
-                continue
-            old_lat, old_lon = float(old[0]), float(old[1])
-
-            target = cim_index_orig.get(orig_cim)
-            if target is None:
-                fn = rec.get("full_name_after")
-                if isinstance(fn, str) and fn:
-                    target = pf_utils.search_by_full_name_after(app, fn)
-
-            if target is None:
-                continue
-
-            pf_utils.safe_set(target, "GPSlat", old_lat, verbose=False)
-            pf_utils.safe_set(target, "GPSlon", old_lon, verbose=False)
+        restore_gps_from_anonymization(gps_map, cim_index_orig, app)
     finally:
         pf_utils.pf_bulk_mode_end(app)
 
