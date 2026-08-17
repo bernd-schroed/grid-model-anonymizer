@@ -296,7 +296,6 @@ def build_geo_transform(seed: str, max_shift_frac: float = 0.45):
 
     angle = 2.0 * math.pi * _u("gps_angle", seed)
     mirror = _u("gps_mirror", seed) > 0.5
-    rescale = math.exp((_u("gps_rescale", seed) - 1) * 2.0)
     dx = (2.0 * _u("gps_dx", seed) - 1.0) * max_shift_frac
     dy = (2.0 * _u("gps_dy", seed) - 1.0) * max_shift_frac
     c, s = math.cos(angle), math.sin(angle)
@@ -310,8 +309,6 @@ def build_geo_transform(seed: str, max_shift_frac: float = 0.45):
         yr = s * x + c * y
         xr += dx  # Verschiebung
         yr += dy
-        xr = xr * rescale
-        yr = yr * rescale
         return yr * 90.0, xr * 180.0  # zurück auf Grad
 
     return transform
