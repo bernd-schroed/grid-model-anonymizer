@@ -1,7 +1,7 @@
 .vs/*
 .vscode/*
 __pycache__/*
-anym/__pycache__/*
+*/__pycache__/*
 *.pfd
 *.zip
 *.json
