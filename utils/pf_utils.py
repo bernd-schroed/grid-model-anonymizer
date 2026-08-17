@@ -33,14 +33,13 @@ Requires a local PowerFactory installation; if none is found,
 """
 
 import logging
+import os
 import re
 import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import psutil
-
-import utils
 
 logger = logging.getLogger("pf_utils.py")
 
@@ -139,6 +138,10 @@ def import_powerfactory_module():
         import powerfactory as pf_module  # type: ignore # pylint: disable=import-error,wrong-import-position,wrong-import-order, import-outside-toplevel
 
     return pf_module
+
+
+def get_p(p: Path) -> str:
+    return os.fspath(Path(p).resolve())
 
 
 pf = import_powerfactory_module()
@@ -572,9 +575,7 @@ def search_by_full_name_after(app, full_name_after: str):
         return None
 
 
-def make_unique_if_needed(
-    obj, desired: str, anonymizer: utils.SeededNameAnonymizer
-) -> str:
+def make_unique_if_needed(obj, desired: str, anonymizer) -> str:
     """
     Rename `obj` to `desired`, disambiguating with a hash suffix if needed.
 
@@ -675,7 +676,7 @@ def _collapse_semicolons(s: str) -> str:
 # ----------------------------
 # DESC handling
 # ----------------------------
-def sanitize_desc(obj, desc: bool, anonymizer: utils.SeededNameAnonymizer):
+def sanitize_desc(obj, desc: bool, anonymizer):
     """
     desc=True  -> delete description (write 'Deleted')
     desc=False -> anonymize description (token-based, reversible via anon_mapping)
@@ -753,7 +754,7 @@ def _desc_tokenize_keep_delims(s: str) -> List[Tuple[str, bool]]:
     return items
 
 
-def _desc_anonymize(desc_value: str, anonymizer: utils.SeededNameAnonymizer) -> str:
+def _desc_anonymize(desc_value: str, anonymizer) -> str:
     """Anonymize each word token in a description, joining tokens with ";"."""
     seq = _desc_tokenize_keep_delims(desc_value)
     if not seq:
@@ -857,7 +858,7 @@ def import_pfd_into_current_user(app, in_path: Path):
     user = app.GetCurrentUser()
 
     import_obj = user.CreateObject("CompfdImport", "Import")
-    import_obj.SetAttribute("e:g_file", utils.get_p(in_path))
+    import_obj.SetAttribute("e:g_file", get_p(in_path))
     import_obj.g_target = user
 
     rc = import_obj.Execute()
@@ -947,7 +948,7 @@ def export_project_to_pfd(app, out_path: Path):
         raise RuntimeError("ComPfdexport not found (StudyCase).")
 
     pfd_export_obj.g_objects = [g_object]
-    pfd_export_obj.g_file = utils.get_p(out_path)
+    pfd_export_obj.g_file = get_p(out_path)
 
     pfd_export_obj.exportCurrentState = 1
     pfd_export_obj.g_undo = 0
