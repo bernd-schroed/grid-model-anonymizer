@@ -1,3 +1,29 @@
+"""
+cgmes_utils.py
+===============
+
+Helper utilities for reading, anonymizing, and repacking CGMES
+(Common Grid Model Exchange Standard) XML bundles.
+
+This module bundles the functionality needed to process CGMES files
+end-to-end:
+
+- RDF/XML tag helpers for working with Clark-notation tags and
+  rdf:ID / rdf:about / rdf:resource attributes (`local`, `remap_id`,
+  `strip_hash`, `get_parent_rdfinfo`).
+- Lookup sets that classify which elements carry anonymization-relevant
+  free text, GPS coordinates, timestamps, or line specification data
+  (`ANON_TEXT_LOCALS`, `GPS_X_LOCALS`, `GPS_Y_LOCALS`,
+  `TIME_STAMP_LOCALS`, `LINE_SPECS_LOCALS`).
+- Conversion between CGMES timestamp strings and Unix epoch seconds
+  (`cgmes_time_to_epoch`, `epoch_to_cgmes_time`).
+- XML parsing/serialisation via lxml (`parse_xml`, `serialise_xml`).
+- Extracting a CGMES bundle (zip, directory, or single XML file) into
+  a working directory and packing processed files back up
+  (`extract_bundle`, `pack_bundle`).
+"""
+
+# pylint: disable=c-extension-no-member
 import shutil
 import zipfile
 from datetime import datetime, timezone
@@ -58,12 +84,50 @@ LINE_SPECS_LOCALS: Set[str] = {
 
 
 def local(tag: str) -> str:
-    """Clark notation {ns}localname -> localname."""
+    """
+    Strip the namespace off a Clark-notation XML tag.
+
+    Parameters
+    ----------
+    tag : str
+        Tag in Clark notation, e.g. "{http://...}localname", or a
+        plain (unnamespaced) tag.
+
+    Returns
+    -------
+    str
+        The local part of the tag (after the last "}"), or `tag`
+        unchanged if it has no namespace.
+    """
     return tag.split("}")[-1] if "}" in tag else tag
 
 
 def remap_id(old_id: str, seed: str, cim_forward: Dict[str, str]) -> str:
-    """Deterministically remap a single rdf:ID string (for --remap-ids mode)."""
+    """
+    Deterministically remap a single rdf:ID string (for --remap-ids mode).
+
+    Returns the cached mapping if `old_id` has already been remapped;
+    otherwise derives a new seeded UUID via
+    `utils.generate_seeded_uuid` and records it in `cim_forward` for
+    reuse on subsequent calls.
+
+    Parameters
+    ----------
+    old_id : str
+        The original rdf:ID (or rdf:about/resource, hash-stripped)
+        value to remap.
+    seed : str
+        Seed used to make the UUID generation deterministic and
+        reproducible.
+    cim_forward : Dict[str, str]
+        Mutable forward-mapping cache from old ID to new ID; updated
+        in place with any newly generated mapping.
+
+    Returns
+    -------
+    str
+        The (new or cached) remapped ID.
+    """
     if old_id in cim_forward:
         return cim_forward[old_id]
     new_id = utils.generate_seeded_uuid(old_id, seed)
@@ -72,24 +136,80 @@ def remap_id(old_id: str, seed: str, cim_forward: Dict[str, str]) -> str:
 
 
 def strip_hash(ref: str) -> str:
-    """Remove leading '#' from an rdf:resource / rdf:about value."""
+    """
+    Remove a leading '#' from an rdf:resource / rdf:about value.
+
+    Parameters
+    ----------
+    ref : str
+        The reference string, typically of the form "#_uuid".
+
+    Returns
+    -------
+    str
+        `ref` without a leading "#", or unchanged if it doesn't start
+        with one.
+    """
     return ref[1:] if ref.startswith("#") else ref
 
 
 def get_parent_rdfinfo(element, rdf_tag):
+    """
+    Read an RDF identifier attribute from an element's parent.
+
+    Convenience helper for reading `rdf_tag` (typically `RDF_ID` or
+    `RDF_ABOUT`) off the parent of `element`, e.g. to find which CIM
+    object a nested property element belongs to.
+
+    Parameters
+    ----------
+    element : lxml.etree._Element
+        The child element whose parent should be inspected.
+    rdf_tag : str
+        Clark-notation attribute name to read (e.g. `RDF_ID`).
+
+    Returns
+    -------
+    str or None
+        The attribute value on the parent element, or None if unset.
+    """
     parent = element.getparent()
     return parent.get(rdf_tag)
 
 
 # ---------- Courtesy of Claude ------------
 def cgmes_time_to_epoch(timestr: str) -> int:
-    """z.B. '1977-01-01T09:00:00Z' -> Seconds since 1970-01-01"""
+    """
+    Convert a CGMES timestamp string to Unix epoch seconds.
+
+    Parameters
+    ----------
+    timestr : str
+        Timestamp in CGMES format, e.g. "1977-01-01T09:00:00Z".
+
+    Returns
+    -------
+    int
+        Seconds since 1970-01-01 (UTC).
+    """
     dt = datetime.strptime(timestr, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
     return int(dt.timestamp())
 
 
 def epoch_to_cgmes_time(epoch: int) -> str:
-    """Seconds since 1970-01-01 -> '1977-01-01T09:00:00Z'"""
+    """
+    Convert Unix epoch seconds to a CGMES timestamp string.
+
+    Parameters
+    ----------
+    epoch : int
+        Seconds since 1970-01-01 (UTC).
+
+    Returns
+    -------
+    str
+        Timestamp in CGMES format, e.g. "1977-01-01T09:00:00Z".
+    """
     return datetime.fromtimestamp(epoch, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
@@ -101,11 +221,42 @@ def epoch_to_cgmes_time(epoch: int) -> str:
 
 
 def parse_xml(path: Path) -> etree._ElementTree:
+    """
+    Parse an XML file into an lxml element tree, preserving formatting.
+
+    Uses an `etree.XMLParser` configured to keep comments and blank
+    text nodes intact, so that a subsequent `serialise_xml` call
+    round-trips the file's structure as closely as possible.
+
+    Parameters
+    ----------
+    path : Path
+        Path to the XML file to parse.
+
+    Returns
+    -------
+    etree._ElementTree
+        The parsed element tree.
+    """
     parser = etree.XMLParser(remove_comments=False, remove_blank_text=False)
     return etree.parse(str(path), parser)
 
 
 def serialise_xml(tree: etree._ElementTree, path: Path) -> None:
+    """
+    Write an lxml element tree to disk as a pretty-printed XML file.
+
+    Creates any missing parent directories of `path`, then writes
+    `tree` with an XML declaration, UTF-8 encoding, and pretty
+    printing enabled.
+
+    Parameters
+    ----------
+    tree : etree._ElementTree
+        The element tree to serialise.
+    path : Path
+        Destination file path.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     tree.write(
         str(path),
@@ -122,8 +273,25 @@ def serialise_xml(tree: etree._ElementTree, path: Path) -> None:
 
 def extract_bundle(src: Path, tmp_dir: Path) -> List[Tuple[str, Path]]:
     """
-    Extract CGMES bundle (zip, directory, single XML) into tmp_dir.
-    Returns list of (relative_name, absolute_path) for all .xml files.
+    Extract a CGMES bundle into a working directory.
+
+    Accepts a directory of XML files, a zip archive, or a single XML
+    file. Directories are copied recursively; zip archives are
+    extracted in place; a single file is copied as-is. In every case
+    the resulting `.xml` files end up under `tmp_dir`.
+
+    Parameters
+    ----------
+    src : Path
+        Source bundle: a directory, a .zip file, or a single .xml file.
+    tmp_dir : Path
+        Working directory the bundle is extracted/copied into.
+
+    Returns
+    -------
+    List[Tuple[str, Path]]
+        (relative_name, absolute_path) pairs for every extracted .xml
+        file, with `relative_name` relative to `tmp_dir`.
     """
     xml_files: List[Tuple[str, Path]] = []
 
@@ -155,7 +323,23 @@ def pack_bundle(
     xml_files: List[Tuple[str, Path]],
     out: Path,
 ) -> None:
-    """Pack processed XML files back into a zip or copy to an output directory."""
+    """
+    Pack processed XML files back into a zip archive or an output directory.
+
+    If `out` has a `.zip` suffix, writes all files into a new deflated
+    zip archive at that path (creating parent directories as needed).
+    Otherwise, treats `out` as a directory and copies each file into
+    it, preserving the relative paths from `xml_files`.
+
+    Parameters
+    ----------
+    xml_files : List[Tuple[str, Path]]
+        (relative_name, absolute_path) pairs, as returned by
+        `extract_bundle`, identifying the files to pack and the
+        relative path each should have in the output.
+    out : Path
+        Destination path: a `.zip` file, or a directory.
+    """
     if out.suffix.lower() == ".zip":
         out.parent.mkdir(parents=True, exist_ok=True)
         with zipfile.ZipFile(out, "w", compression=zipfile.ZIP_DEFLATED) as zf:

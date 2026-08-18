@@ -232,6 +232,32 @@ def load_mapping_json(path: Path) -> dict:
 
 
 def get_mappings(mapping_path: Path):
+    """
+    Load a mapping JSON and unpack it into the individual lookup tables.
+
+    Reads the mapping file via `load_mapping_json` (which transparently
+    migrates legacy formats) and derives both forward and reverse
+    lookups for each mapping type, ready to use for reversing a prior
+    anonymization run.
+
+    Parameters
+    ----------
+    mapping_path : Path
+        Path to the mapping JSON produced by `save_mapping_json`.
+
+    Returns
+    -------
+    tuple
+        `(line_map, anon_rev, time_rev, cim_rev, cim_map, gps_map, prefix)`
+        where:
+        - `line_map` : Dict[str, Dict[str, str]] - original -> anon line info
+        - `anon_rev` : Dict[str, str] - anon string -> original string
+        - `time_rev` : Dict[str, str] - new time -> old time
+        - `cim_rev` : Dict[str, str] - new CIM ID -> old CIM ID
+        - `cim_map` : Dict[str, str] - old CIM ID -> new CIM ID
+        - `gps_map` : Dict[str, dict] - original ID -> GPS mapping info
+        - `prefix` : str - the anonymization token prefix (e.g. "ANON_")
+    """
     data = load_mapping_json(mapping_path)
 
     line_map: Dict[str, Dict[str, str]] = (
@@ -266,6 +292,25 @@ def get_mappings(mapping_path: Path):
 # Deterministic CIM id
 # ----------------------------
 def generate_seeded_uuid(old_id: str, seed: str) -> str:
+    """
+    Deterministically derive a CIM-style UUID from an original ID and seed.
+
+    Strips any leading underscore from `old_id`, hashes it together
+    with `seed` via SHA-256, and formats the first 32 hex digits as a
+    standard UUID string with a leading underscore (CIM convention).
+
+    Parameters
+    ----------
+    old_id : str
+        The original identifier to remap (leading "_" is stripped).
+    seed : str
+        Seed value that makes the derived UUID reproducible.
+
+    Returns
+    -------
+    str
+        A new UUID string of the form "_xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx".
+    """
     clean = str(old_id).lstrip("_")
     payload = (str(seed) + clean).encode("utf-8")
     digest = hashlib.sha256(payload).hexdigest()
@@ -318,6 +363,28 @@ def build_geo_transform(seed: str, max_shift_frac: float = 0.45):
 
 
 def obj_unit_from_name(seed: str, tag: str, name: str) -> float:
+    """
+    Derive a deterministic float in [0, 1) from a seed, tag, and object name.
+
+    Used to derive per-object jitter (e.g. radius/angle) on top of the
+    global GPS transform, so that objects sharing a location don't all
+    shift identically.
+
+    Parameters
+    ----------
+    seed : str
+        Seed value that makes the result reproducible.
+    tag : str
+        Label identifying which derived quantity this is for (e.g.
+        "jitter_radius"), so different tags yield independent values.
+    name : str
+        The object's (original) name or identifier.
+
+    Returns
+    -------
+    float
+        A value in [0, 1).
+    """
     key = f"{seed}|{tag}|{name}"
     h = hashlib.sha256(key.encode("utf-8")).hexdigest()
     x = int(h[:16], 16)
@@ -325,10 +392,46 @@ def obj_unit_from_name(seed: str, tag: str, name: str) -> float:
 
 
 def meters_to_deg_lat(m: float) -> float:
+    """
+    Convert a distance in meters to degrees of latitude.
+
+    Uses the standard approximation of ~111.32 km per degree of
+    latitude, which is effectively constant across the globe.
+
+    Parameters
+    ----------
+    m : float
+        Distance in meters.
+
+    Returns
+    -------
+    float
+        Equivalent distance in degrees of latitude.
+    """
     return m / 111_320.0
 
 
 def meters_to_deg_lon(m: float, lat_deg: float) -> float:
+    """
+    Convert a distance in meters to degrees of longitude at a given latitude.
+
+    Accounts for the convergence of meridians at higher latitudes by
+    scaling the degrees-per-meter conversion with `cos(lat_deg)`,
+    clamped to a minimum factor of 0.1 to avoid blowing up near the
+    poles.
+
+    Parameters
+    ----------
+    m : float
+        Distance in meters.
+    lat_deg : float
+        Latitude in degrees at which the conversion is evaluated.
+
+    Returns
+    -------
+    float
+        Equivalent distance in degrees of longitude at `lat_deg`.
+    """
     coslat = abs(math.cos(math.radians(lat_deg)))
     coslat = max(0.1, coslat)
     return m / (111_320.0 * coslat)
@@ -340,6 +443,32 @@ def scale_back_to_valid_geo(
     new_lat: float,
     new_lon: float,
 ) -> Tuple[float, float]:
+    """
+    Clamp a transformed coordinate back within valid lat/lon bounds.
+
+    If the displacement from `(old_lat, old_lon)` to `(new_lat,
+    new_lon)` would push the point past ±89.9° latitude or ±179.9°
+    longitude, uniformly scales the whole (dlat, dlon) displacement
+    vector down (never below 0) so the result lands exactly on the
+    nearest exceeded limit instead of clipping each axis
+    independently, preserving the direction of the shift.
+
+    Parameters
+    ----------
+    old_lat : float
+        Original latitude in degrees, before transformation.
+    old_lon : float
+        Original longitude in degrees, before transformation.
+    new_lat : float
+        Transformed latitude in degrees, possibly out of bounds.
+    new_lon : float
+        Transformed longitude in degrees, possibly out of bounds.
+
+    Returns
+    -------
+    Tuple[float, float]
+        The (lat, lon) pair, scaled back within valid bounds if needed.
+    """
     lat_limit = 89.9
     lon_limit = 179.9
     dlat = new_lat - old_lat
@@ -363,6 +492,24 @@ def _seed_hash(seed: str, tag: str) -> int:
 
 
 def seed_unit(seed: str, tag: str) -> float:
+    """
+    Derive a deterministic float in [0, 1) from a seed and a tag string.
+
+    Thin wrapper around `_seed_hash` that normalizes the resulting
+    integer into the unit interval.
+
+    Parameters
+    ----------
+    seed : str
+        Seed value that makes the result reproducible.
+    tag : str
+        Label identifying which derived quantity this is for.
+
+    Returns
+    -------
+    float
+        A value in [0, 1).
+    """
     x = _seed_hash(seed, tag)
     return (x % 10_000_000) / 10_000_000.0
 
