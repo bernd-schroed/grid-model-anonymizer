@@ -1,3 +1,20 @@
+"""
+restore_cgmes.py
+=================
+
+Reverses a previously anonymized CGMES bundle back to its original
+values, using the mapping JSON produced during anonymization.
+
+Given an anonymized CGMES bundle (zip, directory, or single XML) and
+the corresponding mapping file, this module extracts the bundle,
+walks every element in every XML tree, and restores free text
+(`_restore_textfields`), rdf:IDs (`_restore_rdfids`), GPS coordinates
+(`_restore_gps`), line specification values (`_restore_line_length`),
+and timestamps (`_restore_time`), before repacking the tree into the
+output bundle via the public `restore_cgmes` entrypoint.
+"""
+
+# pylint: disable=c-extension-no-member
 import logging
 import tempfile
 from pathlib import Path

@@ -1,3 +1,22 @@
+"""
+restore_pf.py
+==============
+
+Reverses a previously anonymized PowerFactory project back to its
+original values, using the mapping JSON produced during
+anonymization.
+
+Given an anonymized .pfd project file and the corresponding mapping
+file, this module imports the project into PowerFactory and restores,
+in order: line types/lengths and GPS coordinates for deleted objects
+(`restore_line_type`, `restore_gps`), object names/attributes/
+descriptions/CIM RDF IDs via the unified anonymization mapping, GPS
+coordinates for objects that still exist under their (restored) CIM
+ID, and study-case timestamps (`restore_times`), before exporting the
+restored project back to .pfd via the public
+`run_powerfactory_restore` entrypoint.
+"""
+
 import logging
 import re
 from pathlib import Path
