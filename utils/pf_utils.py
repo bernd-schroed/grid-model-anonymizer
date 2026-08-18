@@ -141,6 +141,9 @@ def import_powerfactory_module():
 
 
 def get_p(p: Path) -> str:
+    """
+    wrapper to get the pathlib object p to a string format
+    """
     return os.fspath(Path(p).resolve())
 
 
