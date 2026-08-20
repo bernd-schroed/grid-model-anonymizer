@@ -1,7 +1,7 @@
 import logging
 import re
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 from utils import pf_utils, utils
 
@@ -57,7 +57,57 @@ def restore_anon_tokens_in_text(text: str, anon_rev: Dict[str, str]) -> str:
     return _ANON_RE.sub(repl, text)
 
 
-def restore_gps(
+def get_old_coordinates(coordinates_map: dict[str, dict]) -> Tuple[float, float]:
+    """
+    The restoration of the gps data in a function. This represents
+    the first iteration of the gps restoration, that handles that only applies
+    if the gps data was deleted
+
+    Parameters
+    ----------
+    coordinates_map: Dict[str, Dict]
+        The mapping of the gps data, for one Data Point. The keys are "new"
+        and "old" for the old (before anonymization) and new (after
+        anonymization) coordinates of the
+    Returns
+    -------
+    old_lat, old_lon: float
+        The Latitude and Longitude before the Anonymization
+    """
+    old = coordinates_map.get("old")
+    if not (isinstance(old, list) and len(old) == 2):
+        return None
+    old_lat, old_lon = float(old[0]), float(old[1])
+    return old_lat, old_lon
+
+
+def get_obj_by_full_name(coordinates_map: dict[str, dict], app) -> object:
+    """
+    The restoration of the gps data in a function. This represents
+    the first iteration of the gps restoration, that handles that only applies
+    if the gps data was deleted
+
+    Parameters
+    ----------
+    coordinates_map: Dict[str, Dict]
+        The mapping of the gps data, for one Data Point. The keys are "new"
+        and "old" for the old (before anonymization) and new (after
+        anonymization) coordinates of the
+    app: object
+        The Powerfactory Application
+
+    Returns
+    -------
+    target: float
+        The PowerFactory Element object, referenced in coordinates map
+    """
+    fn = coordinates_map.get("full_name_after")
+    if isinstance(fn, str) and fn:
+        target = pf_utils.search_by_full_name_after(app, fn)
+        return target
+
+
+def restore_gps_from_deletion(
     app,
     gps_map: Dict[str, Dict],
     cim_index_current: Dict[str, object],
@@ -65,11 +115,13 @@ def restore_gps(
 ) -> None:
     """
     The restoration of the gps data in a function. This represents
-    the first iteration of the gps restoration, that handles
+    the first iteration of the gps restoration, that handles that only applies if
+    the gps data was deleted
 
     Parameters
-    app: PowerFactory Application
-
+    ----------
+    app: object
+        The Powerfactory Application
     gps_map: Dict[str, Dict]
         The mapping of the gps data. The key is the cim reference and
         data is a dictionary with old and new gps coordinates
@@ -78,18 +130,16 @@ def restore_gps(
     cim_map: Dict[str, str]
         The cim mapping with the old and new cim reference
     """
-    for orig_cim, rec in gps_map.items():
-        if not rec.get("deleted", False):
+    for orig_cim, coordinates_map in gps_map.items():
+        if not coordinates_map.get("deleted", False):
             continue
 
-        old = rec.get("old")
-        if not (isinstance(old, list) and len(old) == 2):
+        old_lat, old_lon = get_old_coordinates(coordinates_map)
+        if old_lat is None:
             continue
-        old_lat, old_lon = float(old[0]), float(old[1])
-
         target = None
 
-        cim_after = rec.get("cim_after")
+        cim_after = coordinates_map.get("cim_after")
         if isinstance(cim_after, str) and cim_after:
             target = cim_index_current.get(cim_after)
 
@@ -99,9 +149,7 @@ def restore_gps(
                 target = cim_index_current.get(current_cim)
 
         if target is None:
-            fn = rec.get("full_name_after")
-            if isinstance(fn, str) and fn:
-                target = pf_utils.search_by_full_name_after(app, fn)
+            target = get_obj_by_full_name(coordinates_map, app)
 
         if target is None:
             logger.warning("Deleted-GPS target not found (orig_cim=%s)", orig_cim)
@@ -217,6 +265,42 @@ def restore_line_type(
             ln_type_obj.Delete()
 
 
+def restore_gps_from_anonymization(
+    gps_map: Dict[str, Dict], cim_index_orig: Dict[str, object], app: object
+):
+    """
+    The restoration of the gps data in a function. This represents
+    the second iteration of the gps restoration, that only applies if
+    the gps data was not deleted
+
+    Parameters
+    ----------
+    gps_map: Dict[str, Dict]
+        The mapping of the gps data. The key is the cim reference and
+        data is a dictionary with old and new gps coordinates
+    cim_index_orig: Dict[str, object]
+        The Cim References corresponding to each object.
+    app: object
+        The Power Factory application
+    """
+    for orig_cim, coordinates_map in gps_map.items():
+        if coordinates_map.get("deleted", False):
+            continue
+
+        old_lat, old_lon = get_old_coordinates(coordinates_map)
+        if old_lat is None:
+            continue
+
+        target = cim_index_orig.get(orig_cim)
+        if target is None:
+            target = get_obj_by_full_name(coordinates_map, app)
+        if target is None:
+            continue
+
+        pf_utils.safe_set(target, "GPSlat", old_lat, verbose=False)
+        pf_utils.safe_set(target, "GPSlon", old_lon, verbose=False)
+
+
 def restore_from_mapping(app, mapping_path: Path):
     """
     Restore inside an already imported project using the mapping JSON:
@@ -243,7 +327,7 @@ def restore_from_mapping(app, mapping_path: Path):
 
     pf_utils.pf_bulk_mode_begin(app)
     try:
-        restore_gps(
+        restore_gps_from_deletion(
             app=app,
             gps_map=gps_map,
             cim_index_current=cim_index_current,
@@ -319,26 +403,7 @@ def restore_from_mapping(app, mapping_path: Path):
 
     pf_utils.pf_bulk_mode_begin(app)
     try:
-        for orig_cim, rec in gps_map.items():
-            if rec.get("deleted", False):
-                continue
-
-            old = rec.get("old")
-            if not (isinstance(old, list) and len(old) == 2):
-                continue
-            old_lat, old_lon = float(old[0]), float(old[1])
-
-            target = cim_index_orig.get(orig_cim)
-            if target is None:
-                fn = rec.get("full_name_after")
-                if isinstance(fn, str) and fn:
-                    target = pf_utils.search_by_full_name_after(app, fn)
-
-            if target is None:
-                continue
-
-            pf_utils.safe_set(target, "GPSlat", old_lat, verbose=False)
-            pf_utils.safe_set(target, "GPSlon", old_lon, verbose=False)
+        restore_gps_from_anonymization(gps_map, cim_index_orig, app)
     finally:
         pf_utils.pf_bulk_mode_end(app)
 
