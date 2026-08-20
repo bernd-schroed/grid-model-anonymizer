@@ -2,7 +2,7 @@
 anym_cgmes.py  –  CGMES (XML/RDF) anonymizer
 ==============================================
 Anonymizes a CGMES bundle (zip archive, folder, or single XML file) using the
-same seed-based SHA-256 approach and mapping JSON as anym_PF / anym_csv.
+same seed-based SHA-256 approach and mapping JSON as anym_PF / anym_csv anym_json.
 
 Design rationale
 ----------------
@@ -23,11 +23,11 @@ Design rationale
 
 - Only fields that actually exist in the file are touched.
 
-Depends on: lxml, anym_PF (SeededNameAnonymizer etc.)
+Depends on: lxml, utils.py, cgmes_utils.py (SeededNameAnonymizer etc.)
 """
 
 # pylint: disable=c-extension-no-member
-from __future__ import annotations
+# from __future__ import annotations
 
 import logging
 import math
@@ -63,7 +63,7 @@ def _apply_gps_pair(
     Records the change in anonymizer.gps_mapping keyed by parent_id.
 
     Note: gps_transform is expected to be a pure translation (see
-    _build_geo_transform in anym_PF.py).  The _scale_back_to_valid_geo
+    build_geo_transform in utils.py).  The scale_back_to_valid_geo
     call below acts as a safety net for points very close to the poles.
     """
     try:
@@ -123,8 +123,10 @@ def _anonymize_tree(
     Modifies the parsed XML tree in-place.
 
     Steps:
-    1. GPS: collect x/y element pairs per parent, then transform/delete.
-    2. Text fields: anonymize IdentifiedObject.name / description / etc.
+    1. Time: Add Random amount of time to the timestamps.
+    2. GPS: collect x/y element pairs per parent, then transform/delete.
+    3. Line Length: Set lengths of transmission lines to 1 km.
+    4. Text fields: anonymize IdentifiedObject.name / description / etc.
     3. rdf:ID remapping (only if remap_ids=True).
     """
 
@@ -161,13 +163,13 @@ def _anonymize_tree(
     # ------------------------------------------------------------------
     # Step 3: line_length
     # ------------------------------------------------------------------
-    _anonymize_line_length(tree=tree, anonymizer=anonymizer)
-    # anonymizer=anonymizer, desc_delete=desc_delete)
+    _anonymize_line_specs(tree=tree, anonymizer=anonymizer)
 
     # ------------------------------------------------------------------
     # Step 4: text fields
     # ------------------------------------------------------------------
     _anonymize_text_fields(tree=tree, anonymizer=anonymizer, desc_delete=desc_delete)
+
     # ------------------------------------------------------------------
     # Step 5: rdf:ID remapping (optional, off by default)
     # ------------------------------------------------------------------
@@ -187,6 +189,10 @@ def _anonymize_gps(
     gps_transform,
     anonymizer: utils.SeededNameAnonymizer,
 ):
+    """
+    Get all the GPS Data and apply the transformation.
+    """
+
     def _parent_key(p: etree._Element) -> str:
         v = p.get(cgmes_utils.RDF_ID) or ""
         if v:
@@ -238,30 +244,35 @@ def _anonymize_gps(
         )
 
 
-def _anonymize_line_length(
+def _anonymize_line_specs(
     tree: etree._ElementTree,
     *,
     anonymizer: utils.SeededNameAnonymizer,
 ):
-
+    """
+    Getting all line information, like length and impedance and alter them.
+    """
     mapping: Dict[str, float] = {}
     for el in tree.iter():
         loc = cgmes_utils.local(el.tag)
         if loc not in cgmes_utils.LINE_SPECS_LOCALS:
             continue
+
         # getting the length of the element
         elem_value = float(el.text)
         cur_rdf_id = cgmes_utils.get_parent_rdfinfo(el, cgmes_utils.RDF_ID)
 
+        # length is always set to 1 km
         if loc == "Conductor.length":
             mapping[loc] = elem_value
-            el.text = str(1)
+            el.text = str(1)  # 1km set
             anonymizer.line_mapping.setdefault(
                 cur_rdf_id,
                 mapping,
             )
             mapping: Dict[str, float] = {}
 
+        # every other spec is an impedance and is therefore slightly altered
         else:
             alteration_seed = utils.seed_unit(
                 seed=anonymizer.seed,
@@ -281,6 +292,9 @@ def _anonymize_text_fields(
     anonymizer: utils.SeededNameAnonymizer,
     desc_delete: bool,
 ):
+    """
+    check every element and anonymize it if it falls in the ANON_TEXT_LOCALS
+    """
     for el in tree.iter():
         loc = cgmes_utils.local(el.tag)
 
@@ -306,6 +320,11 @@ def _anonymize_rdf(
     anonymizer: utils.SeededNameAnonymizer,
     remap_ids: bool,
 ):
+    """
+    only applys if remap_ids == True:
+
+    collect all rdf information and anonymize it
+    """
     if not remap_ids:
         return
 
@@ -356,6 +375,9 @@ def _anonymize_time(
     *,
     anonymizer: utils.SeededNameAnonymizer,
 ):
+    """
+    Get the TimeStamps and add the random amount of time to it.
+    """
     for el in tree.iter():
         loc = cgmes_utils.local(el.tag)
         if loc not in cgmes_utils.TIME_STAMP_LOCALS:
