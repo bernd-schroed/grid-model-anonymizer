@@ -1,7 +1,7 @@
 import logging
 import re
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 from utils import pf_utils, utils
 
@@ -57,16 +57,16 @@ def restore_anon_tokens_in_text(text: str, anon_rev: Dict[str, str]) -> str:
     return _ANON_RE.sub(repl, text)
 
 
-def get_coordinates(rec):
-    old = rec.get("old")
+def get_old_coordinates(coordinates_map: dict[str, dict]) -> Tuple[float, float]:
+    old = coordinates_map.get("old")
     if not (isinstance(old, list) and len(old) == 2):
         return None
     old_lat, old_lon = float(old[0]), float(old[1])
     return old_lat, old_lon
 
 
-def get_obj_by_full_name(rec, app):
-    fn = rec.get("full_name_after")
+def get_obj_by_full_name(coordinates_map: dict[str, dict], app):
+    fn = coordinates_map.get("full_name_after")
     if isinstance(fn, str) and fn:
         target = pf_utils.search_by_full_name_after(app, fn)
         return target
@@ -93,16 +93,16 @@ def restore_gps_from_deletion(
     cim_map: Dict[str, str]
         The cim mapping with the old and new cim reference
     """
-    for orig_cim, rec in gps_map.items():
-        if not rec.get("deleted", False):
+    for orig_cim, coordinates_map in gps_map.items():
+        if not coordinates_map.get("deleted", False):
             continue
 
-        old_lat, old_lon = get_coordinates(rec)
+        old_lat, old_lon = get_old_coordinates(coordinates_map)
         if old_lat is None:
             continue
         target = None
 
-        cim_after = rec.get("cim_after")
+        cim_after = coordinates_map.get("cim_after")
         if isinstance(cim_after, str) and cim_after:
             target = cim_index_current.get(cim_after)
 
@@ -112,7 +112,7 @@ def restore_gps_from_deletion(
                 target = cim_index_current.get(current_cim)
 
         if target is None:
-            target = get_obj_by_full_name(rec, app)
+            target = get_obj_by_full_name(coordinates_map, app)
 
         if target is None:
             logger.warning("Deleted-GPS target not found (orig_cim=%s)", orig_cim)
@@ -228,18 +228,20 @@ def restore_line_type(
             ln_type_obj.Delete()
 
 
-def restore_gps_from_anonymization(gps_map, cim_index_orig, app):
-    for orig_cim, rec in gps_map.items():
-        if rec.get("deleted", False):
+def restore_gps_from_anonymization(
+    gps_map: Dict[str, Dict], cim_index_orig: Dict[str, object], app: object
+):
+    for orig_cim, coordinates_map in gps_map.items():
+        if coordinates_map.get("deleted", False):
             continue
 
-        old_lat, old_lon = get_coordinates(rec)
+        old_lat, old_lon = get_old_coordinates(coordinates_map)
         if old_lat is None:
             continue
 
         target = cim_index_orig.get(orig_cim)
         if target is None:
-            target = get_obj_by_full_name(rec, app)
+            target = get_obj_by_full_name(coordinates_map, app)
         if target is None:
             continue
 
