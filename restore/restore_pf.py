@@ -58,6 +58,22 @@ def restore_anon_tokens_in_text(text: str, anon_rev: Dict[str, str]) -> str:
 
 
 def get_old_coordinates(coordinates_map: dict[str, dict]) -> Tuple[float, float]:
+    """
+    The restoration of the gps data in a function. This represents
+    the first iteration of the gps restoration, that handles that only applies
+    if the gps data was deleted
+
+    Parameters
+    ----------
+    coordinates_map: Dict[str, Dict]
+        The mapping of the gps data, for one Data Point. The keys are "new"
+        and "old" for the old (before anonymization) and new (after
+        anonymization) coordinates of the
+    Returns
+    -------
+    old_lat, old_lon: float
+        The Latitude and Longitude before the Anonymization
+    """
     old = coordinates_map.get("old")
     if not (isinstance(old, list) and len(old) == 2):
         return None
@@ -65,7 +81,26 @@ def get_old_coordinates(coordinates_map: dict[str, dict]) -> Tuple[float, float]
     return old_lat, old_lon
 
 
-def get_obj_by_full_name(coordinates_map: dict[str, dict], app):
+def get_obj_by_full_name(coordinates_map: dict[str, dict], app) -> object:
+    """
+    The restoration of the gps data in a function. This represents
+    the first iteration of the gps restoration, that handles that only applies
+    if the gps data was deleted
+
+    Parameters
+    ----------
+    coordinates_map: Dict[str, Dict]
+        The mapping of the gps data, for one Data Point. The keys are "new"
+        and "old" for the old (before anonymization) and new (after
+        anonymization) coordinates of the
+    app: object
+        The Powerfactory Application
+
+    Returns
+    -------
+    target: float
+        The PowerFactory Element object, referenced in coordinates map
+    """
     fn = coordinates_map.get("full_name_after")
     if isinstance(fn, str) and fn:
         target = pf_utils.search_by_full_name_after(app, fn)
@@ -80,11 +115,13 @@ def restore_gps_from_deletion(
 ) -> None:
     """
     The restoration of the gps data in a function. This represents
-    the first iteration of the gps restoration, that handles
+    the first iteration of the gps restoration, that handles that only applies if
+    the gps data was deleted
 
     Parameters
-    app: PowerFactory Application
-
+    ----------
+    app: object
+        The Powerfactory Application
     gps_map: Dict[str, Dict]
         The mapping of the gps data. The key is the cim reference and
         data is a dictionary with old and new gps coordinates
@@ -231,6 +268,21 @@ def restore_line_type(
 def restore_gps_from_anonymization(
     gps_map: Dict[str, Dict], cim_index_orig: Dict[str, object], app: object
 ):
+    """
+    The restoration of the gps data in a function. This represents
+    the second iteration of the gps restoration, that only applies if
+    the gps data was not deleted
+
+    Parameters
+    ----------
+    gps_map: Dict[str, Dict]
+        The mapping of the gps data. The key is the cim reference and
+        data is a dictionary with old and new gps coordinates
+    cim_index_orig: Dict[str, object]
+        The Cim References corresponding to each object.
+    app: object
+        The Power Factory application
+    """
     for orig_cim, coordinates_map in gps_map.items():
         if coordinates_map.get("deleted", False):
             continue
