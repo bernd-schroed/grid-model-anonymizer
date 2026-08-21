@@ -118,7 +118,7 @@ class SeededNameAnonymizer:
         return self.translate(old)
 
     def _hash(self, text: str, length: int) -> str:
-        payload = (self.seed + "\n" + str(text).strip()).encode("utf-8")
+        payload = (self.seed + "|" + str(text).strip()).encode("utf-8")
         return hashlib.sha256(payload).hexdigest().upper()[:length]
 
     def get_hash(self, text: str, length: int) -> str:
@@ -267,7 +267,7 @@ def get_mappings(mapping_path: Path):
 # ----------------------------
 def generate_seeded_uuid(old_id: str, seed: str) -> str:
     clean = str(old_id).lstrip("_")
-    payload = (str(seed) + clean).encode("utf-8")
+    payload = (str(seed) + "|" + clean).encode("utf-8")
     digest = hashlib.sha256(payload).hexdigest()
     hex32 = digest[:32]
     uuid = f"{hex32[:8]}-{hex32[8:12]}-{hex32[12:16]}-{hex32[16:20]}-{hex32[20:32]}"
