@@ -1,10 +1,7 @@
 # pylint: disable= wrong-import-position
 import logging
-import sys
 import time
 from pathlib import Path
-
-sys.path.append(".")
 
 from anym.anym_cgmes import anonymize_cgmes, restore_cgmes
 from anym.anym_csv import transform_csv_with_mapping
@@ -66,7 +63,7 @@ def test_anonymization(test_file, type_folder):
 def test_restore(anon_file, type_folder):
     input_file = anon_file
     output_file = Path(type_folder, "restore", anon_file.name)
-    mapping_file = Path(type_folder, "mapping", anon_file.stem, ".json")
+    mapping_file = Path(type_folder, "mapping", str(anon_file.stem + ".json"))
     try:
         if type_folder.name == "cgmes":
             restore_cgmes(
@@ -129,4 +126,4 @@ if __name__ == "__main__":
     start = time.time()
     logging.basicConfig(level=logging.DEBUG, filename="test.log", encoding="utf-8")
     test_anon_restore()
-    logger.info(str(f"Duration: {time.time() - start:.2f} s"))
+    logger.info(str(f" Duration: {time.time() - start:.2f} s"))
