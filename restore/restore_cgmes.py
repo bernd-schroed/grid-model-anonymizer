@@ -41,17 +41,12 @@ def _restore_tree(
     prefix: str,
     line_map: Dict[str, str],
 ) -> None:
-    """Reverse anonymization in-place."""
+    """Reverse anonymization in-place for each file."""
 
-    # Restore text fields
     _restore_textfields(tree, anon_rev=anon_rev, prefix=prefix)
-    # Restore rdf:IDs (only relevant when remap_ids was used)
     _restore_rdfids(tree, cim_rev=cim_rev)
-    # Restore GPS
     _restore_gps(tree, gps_map=gps_map)
-    # Restore Line Lengths
     _restore_line_length(tree, line_map=line_map)
-    # Restore Time
     _restore_time(tree, time_rev=time_rev)
 
 
@@ -61,6 +56,9 @@ def _restore_textfields(
     anon_rev: Dict[str, str],
     prefix: str,
 ):
+    """
+    If the element applies to the text locals, set it to the old values
+    """
     for el in tree.iter():
         loc = cgmes_utils.local(el.tag)
         if loc in cgmes_utils.ANON_TEXT_LOCALS and el.text:
@@ -74,6 +72,9 @@ def _restore_rdfids(
     *,
     cim_rev: Dict[str, str],
 ):
+    """
+    get the cim rdf ids of the element and set it to the old value
+    """
     if cim_rev:
         for el in tree.iter():
             raw_id = el.get(cgmes_utils.RDF_ID)
@@ -106,6 +107,9 @@ def _restore_gps(
     *,
     gps_map: Dict[str, dict],
 ):
+    """
+    Check tree if elements applies to GPS Data, and set it to the old data
+    """
     gps_buckets: Dict[str, Dict[str, etree._Element]] = {}
     gps_key_by_elem_id: Dict[int, str] = {}
 
@@ -113,6 +117,8 @@ def _restore_gps(
         loc = cgmes_utils.local(el.tag)
         if loc not in cgmes_utils.GPS_X_LOCALS and loc not in cgmes_utils.GPS_Y_LOCALS:
             continue
+
+        # first get which net element the gps data applies to
         parent = el.getparent()
         if parent is None:
             continue
@@ -125,12 +131,14 @@ def _restore_gps(
             gps_key_by_elem_id[pid] = raw_id if raw_id else str(pid)
         key = gps_key_by_elem_id[pid]
 
+        # put the element in the gps bucket
         bucket = gps_buckets.setdefault(key, {})
         if loc in cgmes_utils.GPS_X_LOCALS:
             bucket["x_el"] = el
         else:
             bucket["y_el"] = el
 
+    # iter through the  gps bucket and set the coordinates back
     for parent_id, bucket in gps_buckets.items():
         rec = gps_map.get(parent_id)
         if rec is None:
@@ -152,6 +160,10 @@ def _restore_line_length(
     *,
     line_map: Dict[str, str],
 ):
+    """
+    Check tree if elements applies to Line Specs, and set it to the old
+    line specs
+    """
     for el in tree.iter():
         loc = cgmes_utils.local(el.tag)
         if loc not in cgmes_utils.LINE_SPECS_LOCALS:
@@ -167,6 +179,10 @@ def _restore_time(
     *,
     time_rev: Dict[str, str],
 ):
+    """
+    Check tree if elements applies to Time Stamps, and set it to the old
+    times
+    """
     for el in tree.iter():
         loc = cgmes_utils.local(el.tag)
         if loc in cgmes_utils.TIME_STAMP_LOCALS:
