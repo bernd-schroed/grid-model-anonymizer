@@ -71,6 +71,7 @@ def load_json_file(file_path: str):
     json.JSONDecodeError
         If the file is not a valid JSON.
     """
+    logger.debug("Loading Json file: %s", file_path)
     try:
         with open(file_path, "r", encoding="utf-8") as file:
             data = json.load(file)
@@ -99,6 +100,7 @@ def save_json_file(data, file_path: str):
     IOError
         If there is an error writing to the file.
     """
+    logger.debug("Saving json file: %s", file_path)
     try:
         with open(file_path, "w", encoding="utf-8") as file:
             json.dump(data, file, ensure_ascii=False, indent=4)
@@ -129,6 +131,7 @@ def anonymize_json_data(
     dict or list
         The anonymized JSON object.
     """
+
     for entry in input_json:
         for category in categories:
             if category in entry:
@@ -186,6 +189,7 @@ def anonymize_json_file(
     """
     data = load_json_file(input_json)
 
+    logger.info("Starting Anonymization of JSON Data")
     if categories:
         prefered_categories = categories
     else:
@@ -196,6 +200,8 @@ def anonymize_json_file(
 
     utils.save_mapping_json(mapping_output, anonymizer)
     save_json_file(anonymized_data, output_json)
+
+    logger.info("Anonymization finished!")
 
 
 def restore_json_anonymization(
@@ -224,6 +230,8 @@ def restore_json_anonymization(
     json.JSONDecodeError
         If the input file is not a valid JSON.
     """
+    logger.info("Starting Restoration of JSON Data")
+
     data = load_json_file(input_json)
     mapping_data = utils.load_mapping_json(mapping_input)
 
@@ -237,3 +245,5 @@ def restore_json_anonymization(
                     if original_value:
                         element[key] = original_value
     save_json_file(data, output_json)
+
+    logger.info("Restoration finished!")
