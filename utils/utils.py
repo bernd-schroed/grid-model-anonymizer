@@ -95,7 +95,7 @@ class SeededNameAnonymizer:
         self.line_mapping: Dict[str, str] = {}
 
         # mapping when the time for case studies are set
-        time_adding = int(_seed_hash(seed=seed, tag="study_casereset"))
+        time_adding = int(get_hash_str(seed, "study_casereset"), 16)
         self.time_adding: int = int(
             time_adding % 1000000000  # 1 Billion seconds ~= 30 Years
         )
@@ -119,7 +119,7 @@ class SeededNameAnonymizer:
 
     def _hash(self, text: str, length: int) -> str:
         payload = (self.seed + "\n" + str(text).strip()).encode("utf-8")
-        return hashlib.sha256(payload).hexdigest().upper()[:length]
+        return get_hash_str(payload, length)
 
     def get_hash(self, text: str, length: int) -> str:
         """Public wrapper around `_hash` for deriving a deterministic hash of arbitrary text."""
@@ -313,15 +313,9 @@ def generate_seeded_uuid(old_id: str, seed: str) -> str:
     """
     clean = str(old_id).lstrip("_")
     payload = (str(seed) + clean).encode("utf-8")
-    digest = hashlib.sha256(payload).hexdigest()
-    hex32 = digest[:32]
+    hex32 = get_hash_str(payload, 32)
     uuid = f"{hex32[:8]}-{hex32[8:12]}-{hex32[12:16]}-{hex32[16:20]}-{hex32[20:32]}"
     return "_" + uuid
-
-
-def _u(tag: str, seed: str) -> float:
-    h = hashlib.sha256((str(seed) + "|" + tag).encode("utf-8")).hexdigest()
-    return (int(h[:16], 16) % 10_000_000) / 10_000_000.0
 
 
 def build_geo_transform(seed: str, max_shift_frac: float = 0.45):
@@ -339,11 +333,11 @@ def build_geo_transform(seed: str, max_shift_frac: float = 0.45):
     zusätzlich zur Rotation.  _scale_back_to_valid_geo fängt Randfälle ab.
     """
 
-    angle = 2.0 * math.pi * _u("gps_angle", seed)
-    mirror = _u("gps_mirror", seed) > 0.5
-    rescale = math.exp((_u("gps_rescale", seed) - 1) * 2.0)
-    dx = (2.0 * _u("gps_dx", seed) - 1.0) * max_shift_frac
-    dy = (2.0 * _u("gps_dy", seed) - 1.0) * max_shift_frac
+    angle = 2.0 * math.pi * get_hash_float(seed, "gps_angle|")
+    mirror = get_hash_float(seed, "gps_mirror|") > 0.5
+    rescale = math.exp((get_hash_float(seed, "gps_rescale|") - 1) * 2.0)
+    dx = (2.0 * get_hash_float(seed, "gps_dx|") - 1.0) * max_shift_frac
+    dy = (2.0 * get_hash_float(seed, "gps_dy|") - 1.0) * max_shift_frac
     c, s = math.cos(angle), math.sin(angle)
 
     def transform(lat: float, lon: float) -> Tuple[float, float]:
@@ -360,35 +354,6 @@ def build_geo_transform(seed: str, max_shift_frac: float = 0.45):
         return yr * 90.0, xr * 180.0  # zurück auf Grad
 
     return transform
-
-
-def obj_unit_from_name(seed: str, tag: str, name: str) -> float:
-    """
-    Derive a deterministic float in [0, 1) from a seed, tag, and object name.
-
-    Used to derive per-object jitter (e.g. radius/angle) on top of the
-    global GPS transform, so that objects sharing a location don't all
-    shift identically.
-
-    Parameters
-    ----------
-    seed : str
-        Seed value that makes the result reproducible.
-    tag : str
-        Label identifying which derived quantity this is for (e.g.
-        "jitter_radius"), so different tags yield independent values.
-    name : str
-        The object's (original) name or identifier.
-
-    Returns
-    -------
-    float
-        A value in [0, 1).
-    """
-    key = f"{seed}|{tag}|{name}"
-    h = hashlib.sha256(key.encode("utf-8")).hexdigest()
-    x = int(h[:16], 16)
-    return (x % 10_000_000) / 10_000_000.0
 
 
 def meters_to_deg_lat(m: float) -> float:
@@ -486,17 +451,33 @@ def scale_back_to_valid_geo(
     return old_lat + scale * dlat, old_lon + scale * dlon
 
 
-def _seed_hash(seed: str, tag: str) -> int:
-    h = hashlib.sha256((str(seed) + "|" + tag).encode("utf-8")).hexdigest()
-    return int(h[:16], 16)
+def get_hash_str(seed: str, tag: str, length: int = 64) -> str:
+    """
+    Derive a deterministic hash 256 from a seed and a tag string and
+    restrict the length.
+
+    Parameters
+    ----------
+    seed : str
+        Seed value that makes the result reproducible.
+    tag : str
+        Label identifying which derived quantity this is for.
+    length: int
+        the length restriction for the string length
+
+    Returns
+    -------
+    float
+        A value in [0, 1).
+    """
+    payload = f"{seed}|{tag}"
+    h = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    return h[:length]
 
 
-def seed_unit(seed: str, tag: str) -> float:
+def get_hash_float(seed: str, tag: str) -> float:
     """
     Derive a deterministic float in [0, 1) from a seed and a tag string.
-
-    Thin wrapper around `_seed_hash` that normalizes the resulting
-    integer into the unit interval.
 
     Parameters
     ----------
@@ -510,8 +491,8 @@ def seed_unit(seed: str, tag: str) -> float:
     float
         A value in [0, 1).
     """
-    x = _seed_hash(seed, tag)
-    return (x % 10_000_000) / 10_000_000.0
+    hash_str = get_hash_str(seed, tag, length=16)
+    return (int(hash_str[:16], 16) % 10_000_000) / 10_000_000.0
 
 
 def has_suffix(full: str) -> bool:

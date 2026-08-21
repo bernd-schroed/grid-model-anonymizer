@@ -87,8 +87,8 @@ def _apply_gps_pair(
 
     # Global rotation + per-object jitter (up to 100 m)
     new_lat, new_lon = gps_transform(old_lat, old_lon)
-    r_m = utils.obj_unit_from_name(seed, "cgmes_gps_r", parent_id) * 100.0
-    theta = 2.0 * math.pi * utils.obj_unit_from_name(seed, "cgmes_gps_theta", parent_id)
+    r_m = utils.get_hash_float(seed, f"|cgmes_gps_r|{parent_id}") * 100.0
+    theta = 2.0 * math.pi * utils.get_hash_float(seed, f"|cgmes_gps_theta|{parent_id}")
     new_lat += utils.meters_to_deg_lat(r_m * math.sin(theta))
     new_lon += utils.meters_to_deg_lon(r_m * math.cos(theta), new_lat)
 
@@ -274,7 +274,7 @@ def _anonymize_line_specs(
 
         # every other spec is an impedance and is therefore slightly altered
         else:
-            alteration_seed = utils.seed_unit(
+            alteration_seed = utils.get_hash_float(
                 seed=anonymizer.seed,
                 tag=f"impedance_alteration_{loc}_{cur_rdf_id}",
             )

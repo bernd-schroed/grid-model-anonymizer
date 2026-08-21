@@ -243,10 +243,8 @@ def _gps_apply_and_record(
     base_name = orig_loc_name_for_jitter or pf_utils.get_loc_name(obj)
     jitter_m = 100.0
 
-    r = utils.obj_unit_from_name(seed, "gps_jitter_r", base_name) * jitter_m
-    theta = (
-        2.0 * math.pi * utils.obj_unit_from_name(seed, "gps_jitter_theta", base_name)
-    )
+    r = utils.get_hash_float(seed, f"gps_jitter_r|{base_name}") * jitter_m
+    theta = 2.0 * math.pi * utils.get_hash_float(seed, f"gps_jitter_theta|{base_name}")
 
     dx_m = r * math.cos(theta)
     dy_m = r * math.sin(theta)
@@ -312,7 +310,7 @@ def set_impedances(
             return
 
         # set the alteration
-        alteration_seed = utils.seed_unit(
+        alteration_seed = utils.get_hash_float(
             seed=anonymizer.seed,
             tag=f"impedance_alteration_{impedance_type}_{ln_name}",
         )
