@@ -2,12 +2,12 @@
 utils.py - Shared anonymization primitives
 ============================================
 
-Common, format-agnostic building blocks used by anym_PF.py, anym_cgmes.py,
-and anym_csv.py: a deterministic seed-based name anonymizer, mapping
+Common, format-agnostic building blocks used by anym_x and restore_x files:
+a deterministic seed-based name anonymizer, mapping
 JSON I/O, deterministic UUID generation, and a deterministic GPS
 coordinate transform. Keeping these here ensures that the same input
 value always maps to the same anonymized output across all three
-input formats (PowerFactory, CGMES, CSV), so a given asset's name,
+input formats (PowerFactory, CGMES, CSV, JSON), so a given asset's name,
 ID, and location stay consistent regardless of which file it appears in.
 
 Contents
@@ -128,12 +128,6 @@ class SeededNameAnonymizer:
     def translate(self, name: str) -> str:
         """
         Deterministically anonymize a string, reusing any existing mapping.
-
-        Returns `name` unchanged if it's falsy or already looks like an
-        anonymized token (starts with `prefix`, or is a known anon value).
-        Otherwise derives a new "<prefix><hash>" token, extending the hash
-        length on collision until a unique token is found, and records the
-        mapping for later reversal.
         """
 
         if not name:
@@ -231,14 +225,19 @@ def load_mapping_json(path: Path) -> dict:
     return data
 
 
-def get_mappings(mapping_path: Path):
+def get_mappings(
+    mapping_path: Path,
+) -> Tuple[
+    Dict[str, Dict[str, str]],
+    Dict[str, str],
+    Dict[str, str],
+    Dict[str, str],
+    Dict[str, str],
+    Dict[str, dict],
+    str,
+]:
     """
     Load a mapping JSON and unpack it into the individual lookup tables.
-
-    Reads the mapping file via `load_mapping_json` (which transparently
-    migrates legacy formats) and derives both forward and reverse
-    lookups for each mapping type, ready to use for reversing a prior
-    anonymization run.
 
     Parameters
     ----------
@@ -295,10 +294,6 @@ def generate_seeded_uuid(old_id: str, seed: str) -> str:
     """
     Deterministically derive a CIM-style UUID from an original ID and seed.
 
-    Strips any leading underscore from `old_id`, hashes it together
-    with `seed` via SHA-256, and formats the first 32 hex digits as a
-    standard UUID string with a leading underscore (CIM convention).
-
     Parameters
     ----------
     old_id : str
@@ -320,17 +315,16 @@ def generate_seeded_uuid(old_id: str, seed: str) -> str:
 
 def build_geo_transform(seed: str, max_shift_frac: float = 0.45):
     """
-    Rotation + Translation im normalisierten Koordinatenraum.
+    Rotation + translation in normalized coordinate space.
 
-    lat/90 und lon/180 werden auf [-1, 1] normiert, dort wird eine
-    seed-basierte Rotation + Verschiebung angewandt, dann zurück auf Grad
-    gemappt.  Das vermeidet ungültige Koordinaten durch Rotation im rohen
-    Grad-Raum (wo lat/lon kein euklidischer Raum ist) und erzeugt trotzdem
-    starke Anonymisierung: Punkte in Europa landen typischerweise in Afrika
-    oder Asien.
+    lat/90 and lon/180 are normalized to [-1, 1]; a seed-based rotation +
+    translation is applied there, then mapped back to degrees. This avoids
+    invalid coordinates from rotating in raw degree space (where lat/lon
+    is not a Euclidean space) while still producing strong anonymization:
+    points in Europe typically end up in Africa or Asia.
 
-    max_shift_frac=0.45 entspricht bis zu ±40.5° Lat / ±81° Lon Verschiebung
-    zusätzlich zur Rotation.  _scale_back_to_valid_geo fängt Randfälle ab.
+    max_shift_frac=0.45 corresponds to up to ±40.5° lat / ±81° lon shift
+    in addition to the rotation. _scale_back_to_valid_geo catches edge cases.
     """
 
     angle = 2.0 * math.pi * get_hash_float(seed, "gps_angle|")

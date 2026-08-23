@@ -86,18 +86,6 @@ LINE_SPECS_LOCALS: Set[str] = {
 def local(tag: str) -> str:
     """
     Strip the namespace off a Clark-notation XML tag.
-
-    Parameters
-    ----------
-    tag : str
-        Tag in Clark notation, e.g. "{http://...}localname", or a
-        plain (unnamespaced) tag.
-
-    Returns
-    -------
-    str
-        The local part of the tag (after the last "}"), or `tag`
-        unchanged if it has no namespace.
     """
     return tag.split("}")[-1] if "}" in tag else tag
 
@@ -105,11 +93,6 @@ def local(tag: str) -> str:
 def remap_id(old_id: str, seed: str, cim_forward: Dict[str, str]) -> str:
     """
     Deterministically remap a single rdf:ID string (for --remap-ids mode).
-
-    Returns the cached mapping if `old_id` has already been remapped;
-    otherwise derives a new seeded UUID via
-    `utils.generate_seeded_uuid` and records it in `cim_forward` for
-    reuse on subsequent calls.
 
     Parameters
     ----------
@@ -138,28 +121,13 @@ def remap_id(old_id: str, seed: str, cim_forward: Dict[str, str]) -> str:
 def strip_hash(ref: str) -> str:
     """
     Remove a leading '#' from an rdf:resource / rdf:about value.
-
-    Parameters
-    ----------
-    ref : str
-        The reference string, typically of the form "#_uuid".
-
-    Returns
-    -------
-    str
-        `ref` without a leading "#", or unchanged if it doesn't start
-        with one.
     """
     return ref[1:] if ref.startswith("#") else ref
 
 
-def get_parent_rdfinfo(element, rdf_tag):
+def get_parent_rdfinfo(element: etree._Element, rdf_tag: str) -> str | None:
     """
     Read an RDF identifier attribute from an element's parent.
-
-    Convenience helper for reading `rdf_tag` (typically `RDF_ID` or
-    `RDF_ABOUT`) off the parent of `element`, e.g. to find which CIM
-    object a nested property element belongs to.
 
     Parameters
     ----------
@@ -224,10 +192,6 @@ def parse_xml(path: Path) -> etree._ElementTree:
     """
     Parse an XML file into an lxml element tree, preserving formatting.
 
-    Uses an `etree.XMLParser` configured to keep comments and blank
-    text nodes intact, so that a subsequent `serialise_xml` call
-    round-trips the file's structure as closely as possible.
-
     Parameters
     ----------
     path : Path
@@ -245,10 +209,6 @@ def parse_xml(path: Path) -> etree._ElementTree:
 def serialise_xml(tree: etree._ElementTree, path: Path) -> None:
     """
     Write an lxml element tree to disk as a pretty-printed XML file.
-
-    Creates any missing parent directories of `path`, then writes
-    `tree` with an XML declaration, UTF-8 encoding, and pretty
-    printing enabled.
 
     Parameters
     ----------
@@ -274,11 +234,6 @@ def serialise_xml(tree: etree._ElementTree, path: Path) -> None:
 def extract_bundle(src: Path, tmp_dir: Path) -> List[Tuple[str, Path]]:
     """
     Extract a CGMES bundle into a working directory.
-
-    Accepts a directory of XML files, a zip archive, or a single XML
-    file. Directories are copied recursively; zip archives are
-    extracted in place; a single file is copied as-is. In every case
-    the resulting `.xml` files end up under `tmp_dir`.
 
     Parameters
     ----------
@@ -325,11 +280,6 @@ def pack_bundle(
 ) -> None:
     """
     Pack processed XML files back into a zip archive or an output directory.
-
-    If `out` has a `.zip` suffix, writes all files into a new deflated
-    zip archive at that path (creating parent directories as needed).
-    Otherwise, treats `out` as a directory and copies each file into
-    it, preserving the relative paths from `xml_files`.
 
     Parameters
     ----------
