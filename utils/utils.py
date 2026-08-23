@@ -2,12 +2,12 @@
 utils.py - Shared anonymization primitives
 ============================================
 
-Common, format-agnostic building blocks used by anym_PF.py, anym_cgmes.py,
-and anym_csv.py: a deterministic seed-based name anonymizer, mapping
+Common, format-agnostic building blocks used by anym_x and restore_x files:
+a deterministic seed-based name anonymizer, mapping
 JSON I/O, deterministic UUID generation, and a deterministic GPS
 coordinate transform. Keeping these here ensures that the same input
 value always maps to the same anonymized output across all three
-input formats (PowerFactory, CGMES, CSV), so a given asset's name,
+input formats (PowerFactory, CGMES, CSV, JSON), so a given asset's name,
 ID, and location stay consistent regardless of which file it appears in.
 
 Contents
@@ -95,7 +95,7 @@ class SeededNameAnonymizer:
         self.line_mapping: Dict[str, str] = {}
 
         # mapping when the time for case studies are set
-        time_adding = int(_seed_hash(seed=seed, tag="study_casereset"))
+        time_adding = int(get_hash_str(seed, "study_casereset"), 16)
         self.time_adding: int = int(
             time_adding % 1000000000  # 1 Billion seconds ~= 30 Years
         )
@@ -119,7 +119,7 @@ class SeededNameAnonymizer:
 
     def _hash(self, text: str, length: int) -> str:
         payload = (self.seed + "|" + str(text).strip()).encode("utf-8")
-        return hashlib.sha256(payload).hexdigest().upper()[:length]
+        return get_hash_str(payload, length)
 
     def get_hash(self, text: str, length: int) -> str:
         """Public wrapper around `_hash` for deriving a deterministic hash of arbitrary text."""
@@ -128,12 +128,6 @@ class SeededNameAnonymizer:
     def translate(self, name: str) -> str:
         """
         Deterministically anonymize a string, reusing any existing mapping.
-
-        Returns `name` unchanged if it's falsy or already looks like an
-        anonymized token (starts with `prefix`, or is a known anon value).
-        Otherwise derives a new "<prefix><hash>" token, extending the hash
-        length on collision until a unique token is found, and records the
-        mapping for later reversal.
         """
 
         if not name:
@@ -231,7 +225,38 @@ def load_mapping_json(path: Path) -> dict:
     return data
 
 
-def get_mappings(mapping_path: Path):
+def get_mappings(
+    mapping_path: Path,
+) -> Tuple[
+    Dict[str, Dict[str, str]],
+    Dict[str, str],
+    Dict[str, str],
+    Dict[str, str],
+    Dict[str, str],
+    Dict[str, dict],
+    str,
+]:
+    """
+    Load a mapping JSON and unpack it into the individual lookup tables.
+
+    Parameters
+    ----------
+    mapping_path : Path
+        Path to the mapping JSON produced by `save_mapping_json`.
+
+    Returns
+    -------
+    tuple
+        `(line_map, anon_rev, time_rev, cim_rev, cim_map, gps_map, prefix)`
+        where:
+        - `line_map` : Dict[str, Dict[str, str]] - original -> anon line info
+        - `anon_rev` : Dict[str, str] - anon string -> original string
+        - `time_rev` : Dict[str, str] - new time -> old time
+        - `cim_rev` : Dict[str, str] - new CIM ID -> old CIM ID
+        - `cim_map` : Dict[str, str] - old CIM ID -> new CIM ID
+        - `gps_map` : Dict[str, dict] - original ID -> GPS mapping info
+        - `prefix` : str - the anonymization token prefix (e.g. "ANON_")
+    """
     data = load_mapping_json(mapping_path)
 
     line_map: Dict[str, Dict[str, str]] = (
@@ -266,38 +291,46 @@ def get_mappings(mapping_path: Path):
 # Deterministic CIM id
 # ----------------------------
 def generate_seeded_uuid(old_id: str, seed: str) -> str:
+    """
+    Deterministically derive a CIM-style UUID from an original ID and seed.
+
+    Parameters
+    ----------
+    old_id : str
+        The original identifier to remap (leading "_" is stripped).
+    seed : str
+        Seed value that makes the derived UUID reproducible.
+
+    Returns
+    -------
+    str
+        A new UUID string of the form "_xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx".
+    """
     clean = str(old_id).lstrip("_")
     payload = (str(seed) + "|" + clean).encode("utf-8")
-    digest = hashlib.sha256(payload).hexdigest()
-    hex32 = digest[:32]
+    hex32 = get_hash_str(payload, 32)
     uuid = f"{hex32[:8]}-{hex32[8:12]}-{hex32[12:16]}-{hex32[16:20]}-{hex32[20:32]}"
     return "_" + uuid
 
 
-def _u(tag: str, seed: str) -> float:
-    h = hashlib.sha256((str(seed) + "|" + tag).encode("utf-8")).hexdigest()
-    return (int(h[:16], 16) % 10_000_000) / 10_000_000.0
-
-
 def build_geo_transform(seed: str, max_shift_frac: float = 0.45):
     """
-    Rotation + Translation im normalisierten Koordinatenraum.
+    Rotation + translation in normalized coordinate space.
 
-    lat/90 und lon/180 werden auf [-1, 1] normiert, dort wird eine
-    seed-basierte Rotation + Verschiebung angewandt, dann zurück auf Grad
-    gemappt.  Das vermeidet ungültige Koordinaten durch Rotation im rohen
-    Grad-Raum (wo lat/lon kein euklidischer Raum ist) und erzeugt trotzdem
-    starke Anonymisierung: Punkte in Europa landen typischerweise in Afrika
-    oder Asien.
+    lat/90 and lon/180 are normalized to [-1, 1]; a seed-based rotation +
+    translation is applied there, then mapped back to degrees. This avoids
+    invalid coordinates from rotating in raw degree space (where lat/lon
+    is not a Euclidean space) while still producing strong anonymization:
+    points in Europe typically end up in Africa or Asia.
 
-    max_shift_frac=0.45 entspricht bis zu ±40.5° Lat / ±81° Lon Verschiebung
-    zusätzlich zur Rotation.  _scale_back_to_valid_geo fängt Randfälle ab.
+    max_shift_frac=0.45 corresponds to up to ±40.5° lat / ±81° lon shift
+    in addition to the rotation. _scale_back_to_valid_geo catches edge cases.
     """
 
-    angle = 2.0 * math.pi * _u("gps_angle", seed)
-    mirror = _u("gps_mirror", seed) > 0.5
-    dx = (2.0 * _u("gps_dx", seed) - 1.0) * max_shift_frac
-    dy = (2.0 * _u("gps_dy", seed) - 1.0) * max_shift_frac
+    angle = 2.0 * math.pi * get_hash_float(seed, "gps_angle|")
+    mirror = get_hash_float(seed, "gps_mirror|") > 0.5
+    dx = (2.0 * get_hash_float(seed, "gps_dx|") - 1.0) * max_shift_frac
+    dy = (2.0 * get_hash_float(seed, "gps_dy|") - 1.0) * max_shift_frac
     c, s = math.cos(angle), math.sin(angle)
 
     def transform(lat: float, lon: float) -> Tuple[float, float]:
@@ -314,18 +347,47 @@ def build_geo_transform(seed: str, max_shift_frac: float = 0.45):
     return transform
 
 
-def obj_unit_from_name(seed: str, tag: str, name: str) -> float:
-    key = f"{seed}|{tag}|{name}"
-    h = hashlib.sha256(key.encode("utf-8")).hexdigest()
-    x = int(h[:16], 16)
-    return (x % 10_000_000) / 10_000_000.0
-
-
 def meters_to_deg_lat(m: float) -> float:
+    """
+    Convert a distance in meters to degrees of latitude.
+
+    Uses the standard approximation of ~111.32 km per degree of
+    latitude, which is effectively constant across the globe.
+
+    Parameters
+    ----------
+    m : float
+        Distance in meters.
+
+    Returns
+    -------
+    float
+        Equivalent distance in degrees of latitude.
+    """
     return m / 111_320.0
 
 
 def meters_to_deg_lon(m: float, lat_deg: float) -> float:
+    """
+    Convert a distance in meters to degrees of longitude at a given latitude.
+
+    Accounts for the convergence of meridians at higher latitudes by
+    scaling the degrees-per-meter conversion with `cos(lat_deg)`,
+    clamped to a minimum factor of 0.1 to avoid blowing up near the
+    poles.
+
+    Parameters
+    ----------
+    m : float
+        Distance in meters.
+    lat_deg : float
+        Latitude in degrees at which the conversion is evaluated.
+
+    Returns
+    -------
+    float
+        Equivalent distance in degrees of longitude at `lat_deg`.
+    """
     coslat = abs(math.cos(math.radians(lat_deg)))
     coslat = max(0.1, coslat)
     return m / (111_320.0 * coslat)
@@ -337,6 +399,32 @@ def scale_back_to_valid_geo(
     new_lat: float,
     new_lon: float,
 ) -> Tuple[float, float]:
+    """
+    Clamp a transformed coordinate back within valid lat/lon bounds.
+
+    If the displacement from `(old_lat, old_lon)` to `(new_lat,
+    new_lon)` would push the point past ±89.9° latitude or ±179.9°
+    longitude, uniformly scales the whole (dlat, dlon) displacement
+    vector down (never below 0) so the result lands exactly on the
+    nearest exceeded limit instead of clipping each axis
+    independently, preserving the direction of the shift.
+
+    Parameters
+    ----------
+    old_lat : float
+        Original latitude in degrees, before transformation.
+    old_lon : float
+        Original longitude in degrees, before transformation.
+    new_lat : float
+        Transformed latitude in degrees, possibly out of bounds.
+    new_lon : float
+        Transformed longitude in degrees, possibly out of bounds.
+
+    Returns
+    -------
+    Tuple[float, float]
+        The (lat, lon) pair, scaled back within valid bounds if needed.
+    """
     lat_limit = 89.9
     lon_limit = 179.9
     dlat = new_lat - old_lat
@@ -354,14 +442,48 @@ def scale_back_to_valid_geo(
     return old_lat + scale * dlat, old_lon + scale * dlon
 
 
-def _seed_hash(seed: str, tag: str) -> int:
-    h = hashlib.sha256((str(seed) + "|" + tag).encode("utf-8")).hexdigest()
-    return int(h[:16], 16)
+def get_hash_str(seed: str, tag: str, length: int = 64) -> str:
+    """
+    Derive a deterministic hash 256 from a seed and a tag string and
+    restrict the length.
+
+    Parameters
+    ----------
+    seed : str
+        Seed value that makes the result reproducible.
+    tag : str
+        Label identifying which derived quantity this is for.
+    length: int
+        the length restriction for the string length
+
+    Returns
+    -------
+    float
+        A value in [0, 1).
+    """
+    payload = f"{seed}|{tag}"
+    h = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    return h[:length]
 
 
-def seed_unit(seed: str, tag: str) -> float:
-    x = _seed_hash(seed, tag)
-    return (x % 10_000_000) / 10_000_000.0
+def get_hash_float(seed: str, tag: str) -> float:
+    """
+    Derive a deterministic float in [0, 1) from a seed and a tag string.
+
+    Parameters
+    ----------
+    seed : str
+        Seed value that makes the result reproducible.
+    tag : str
+        Label identifying which derived quantity this is for.
+
+    Returns
+    -------
+    float
+        A value in [0, 1).
+    """
+    hash_str = get_hash_str(seed, tag, length=16)
+    return (int(hash_str[:16], 16) % 10_000_000) / 10_000_000.0
 
 
 def has_suffix(full: str) -> bool:

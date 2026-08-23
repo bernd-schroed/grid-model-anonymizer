@@ -4,7 +4,7 @@ anym_pf.py - PowerFactory (.pfd) anonymizer
 
 Anonymizes a DIgSILENT PowerFactory project (.pfd) in place via the
 PowerFactory Python API, using the same seed-based deterministic
-approach and mapping JSON shared with anym_cgmes / anym_csv.
+approach and mapping JSON shared with anym_cgmes / anym_csv / anym_json.
 
 Workflow
 --------
@@ -46,10 +46,10 @@ Requires a local PowerFactory installation (searches
 `C:\\Program Files\\DIgSILENT` and `C:\\Program Files (x86)\\DIgSILENT`)
 and a matching PowerFactory-compatible Python interpreter version;
 exits with an error message at import time if no compatible version
-is found. Depends on: psutil, utils (SeededNameAnonymizer etc.).
+is found. Depends on: psutil, pf_utils, utils (SeededNameAnonymizer etc.).
 """
 
-from __future__ import annotations
+# from __future__ import annotations
 
 import logging
 import math
@@ -58,7 +58,10 @@ from typing import Dict, List, Optional, Tuple
 
 from utils import pf_utils, utils
 
+# the pf module has to be imported from this function to ensure it is the
+# correct version
 pf = pf_utils.import_powerfactory_module()
+
 logger = logging.getLogger(" anym_pf.py")
 
 
@@ -73,6 +76,22 @@ def anonymize_cim_rdf_id(
 
     No-op if the object has no cimRdfId. Reuses an existing mapping
     entry if this ID was already remapped.
+
+    Parameters
+    ----------
+    obj : the PF object whose CIM RDF ID should be remapped.
+    seed : str
+        Seed value passed to `utils.generate_seeded_uuid` to make the
+        new ID deterministic and reproducible.
+    anonymizer : utils.SeededNameAnonymizer
+        Anonymizer instance whose `cim_forward` mapping is read from
+        and updated.
+
+    Returns
+    -------
+    None
+        No-op (returns without effect) if the object has no cimRdfId.
+
     """
     ids = pf_utils.get_cim_rdf_id(obj)
     if not ids:
@@ -103,6 +122,19 @@ def anonymize_string_fields(
     derived from the object's pid_/oid_ before translating (so empty
     fields still get a deterministic anonymized value); otherwise
     leaves genuinely empty fields untouched.
+
+    Parameters
+    ----------
+    obj : the PF object whose attributes should be anonymized.
+    anonymizer : utils.SeededNameAnonymizer
+        Anonymizer used to derive the new attribute values.
+    fields : List[str]
+        Names of the string attributes to anonymize (e.g. "sernum",
+        "manuf").
+    empty_as_zero : bool, optional
+        If True (default), empty values are replaced with a
+        deterministic non-empty placeholder derived from the object's
+        `pid_`/`oid_` before anonymizing, instead of being skipped.
     """
     for attr in fields:
         old = pf_utils.get_str_attr(obj, attr)
@@ -136,10 +168,37 @@ def _gps_apply_and_record(
     orig_loc_name_for_jitter: Optional[str],
 ):
     """
-    Second pass:
-    - gps_delete=True: set to 0/0 and record old GPS + identifiers
-    - gps_delete=False: transform + jitter and record old/new GPS
-    Mapping key is the original cimRdfId (before any change).
+    Apply GPS anonymization to one object and record it for later reversal.
+
+    Second-pass helper, run after loc_name/cimRdfId have already been
+    changed, so `orig_cim_id` is used as the mapping key instead of
+    the object's (now changed) current CIM ID. No-op if `orig_cim_id`
+    is None, if the object has no readable GPS coordinates, or if its
+    coordinates are already at the origin (0, 0).
+
+    Parameters
+    ----------
+    obj : the PF object whose GPS coordinates should be anonymized.
+    seed : str
+        Seed value used to derive the deterministic jitter offset.
+    gps_delete : bool
+        True to zero out GPS coordinates (delete mode); False to
+        transform and jitter them instead.
+    gps_transform : callable
+        A `(lat, lon) -> (lat, lon)` function, as returned by
+        `utils.build_geo_transform`, applied when `gps_delete` is
+        False.
+    anonymizer : utils.SeededNameAnonymizer
+        Anonymizer whose `gps_mapping` is updated with the
+        before/after (or before/deleted) GPS record.
+    orig_cim_id : Optional[str]
+        The object's CIM RDF ID *before* any anonymization, used as
+        the mapping key. If None, the function returns without doing
+        anything.
+    orig_loc_name_for_jitter : Optional[str]
+        The object's original `loc_name` (or None to fall back to its
+        current `loc_name`), used only to seed the per-object jitter
+        deterministically.
     """
     if orig_cim_id is None:
         return
@@ -184,10 +243,8 @@ def _gps_apply_and_record(
     base_name = orig_loc_name_for_jitter or pf_utils.get_loc_name(obj)
     jitter_m = 100.0
 
-    r = utils.obj_unit_from_name(seed, "gps_jitter_r", base_name) * jitter_m
-    theta = (
-        2.0 * math.pi * utils.obj_unit_from_name(seed, "gps_jitter_theta", base_name)
-    )
+    r = utils.get_hash_float(seed, f"gps_jitter_r|{base_name}") * jitter_m
+    theta = 2.0 * math.pi * utils.get_hash_float(seed, f"gps_jitter_theta|{base_name}")
 
     dx_m = r * math.cos(theta)
     dy_m = r * math.sin(theta)
@@ -225,20 +282,35 @@ def set_impedances(
     ln_name: str,
 ) -> None:
     """
-    For power line type resetting, set the new impedances for that line
+    Scale a line type's per-km impedance values onto a new line type.
+    Also add Impedance alteration for further anonymization
 
     Parameters
     ----------
-    old_type, new_type : the line type objects with the the old impedance and the new
-    ratio              : the ratio between their impedances
+    old_type : line type object
+        The original line type to read per-km impedance values from.
+    new_type : line type object
+        The newly created line type (see `create_new_line_type`) to
+        write the rescaled impedance values to.
+    ratio : float
+        Scaling factor applied to each impedance value, typically
+        `old_length / new_length`.
+    anonymizer : utils.SeededNameAnonymizer
+        Anonymizer providing the seed used to derive the deterministic
+        alteration factor.
+    ln_name : str
+        Name of the original line type, mixed into the alteration
+        seed so different lines get independent alteration factors.
     """
 
     for impedance_type in pf_utils.IMPEDANCE_TYPES:
         impedance_value_per_km = pf_utils.get_float_attr(old_type, impedance_type)
+        # check if there actually is an impedance
         if impedance_value_per_km is None:
             return
 
-        alteration_seed = utils.seed_unit(
+        # set the alteration
+        alteration_seed = utils.get_hash_float(
             seed=anonymizer.seed,
             tag=f"impedance_alteration_{impedance_type}_{ln_name}",
         )
@@ -259,8 +331,9 @@ def set_line_length(obj: object, anonymizer: utils.SeededNameAnonymizer) -> None
     ----------
     obj: Line object
         the line object (not the line type object)
-    anonymizer: SeededNameAnonymizer
-        the used anonymizer object
+    anonymizer : utils.SeededNameAnonymizer
+            Anonymizer providing the seed used to derive the deterministic
+            alteration factor.
     """
 
     # check if the object is a power line and actually needs length resetting
@@ -330,7 +403,6 @@ def anonymize_time(obj, anonymizer):
         The powerfactory object to be time updated
     anonymizer : anonymizer
         The anonymizer object used for the anonymization
-
     """
     old_time = int(pf_utils.get_float_attr(obj, "iStudyTime"))
     new_time = anonymizer.add_time(old_time)
@@ -350,10 +422,37 @@ def anonymize_objects(
     length: int = 10,
 ) -> utils.SeededNameAnonymizer:
     """
-    gps parameter meaning:
-      gps=True  -> delete GPS (0/0)
-      gps=False -> transform + jitter
-    GPS runs in a second pass (after loc_name / cimRdfId changes).
+    Anonymize a collected list of PF objects in place and return the mapping.
+
+    Parameters
+    ----------
+    app : the PowerFactory application object (from pf.GetApplication()).
+    objects : List
+        The PF objects to anonymize, as returned by
+        `pf_utils.collect_unique_objects_for_anonymization`.
+    seed : str
+        Seed value that makes the whole anonymization run
+        deterministic and reproducible;
+    desc : bool
+        Passed through to `pf_utils.sanitize_desc`: True to delete
+        descriptions, False to anonymize their contents in place
+        (exact behavior defined by that function).
+    gps : bool
+        Passed through to `_gps_apply_and_record` as `gps_delete`:
+        True to delete GPS coordinates, False to transform + jitter
+        them instead.
+    prefix : str, optional
+        Prefix for anonymized string tokens (default "ANON_")
+    length : int, optional
+        Initial hash length for anonymized tokens (default 10)
+
+    Returns
+    -------
+    utils.SeededNameAnonymizer
+        The anonymizer instance holding every mapping created during
+        this run (names/attributes, CIM RDF IDs, GPS, line lengths,
+        study-case times), ready to be persisted via
+        `utils.save_mapping_json`.
     """
     anonymizer = utils.SeededNameAnonymizer(seed=seed, prefix=prefix, length=length)
     gps_transform = utils.build_geo_transform(seed)
@@ -479,8 +578,49 @@ def run_powerfactory_import_export(
     hash_length: int = 10,
 ):
     """
-    gps=True  -> delete GPS (0/0) + JSON stores old + cim_after + full_name_after
-    gps=False -> transform+jitter + JSON stores old/new
+    End-to-end PF anonymization: import .pfd -> anonymize -> export .pfd.
+
+    Parameters
+    ----------
+    in_path : Path
+        Path to the source .pfd file to anonymize.
+    out_path : Path
+        Destination path for the anonymized .pfd export. Parent
+        directories are created if needed.
+    random_seed : str
+        Seed value that makes the whole anonymization run
+        deterministic and reproducible;
+    mapping_out_path : Path
+        Destination path for the mapping JSON that records every
+        original -> anonymized value, needed later to reverse the
+        anonymization.
+    desc : bool
+        True to delete object descriptions, False to anonymize their
+        contents in place;
+    gps : bool
+        True to delete GPS coordinates (set to 0/0), False to
+        transform and jitter them instead; The mapping JSON records the
+        original lat/lon in both cases (plus the post-anonymization CIM ID
+        and full name when deleted, or the new lat/lon when transformed).
+    prefix : str, optional
+        Prefix for anonymized string tokens (default "ANON_").
+    hash_length : int, optional
+        Initial hash length for anonymized tokens (default 10).
+
+    Raises
+    ------
+    RuntimeError
+        If the PowerFactory Python API or application is not
+        available.
+    FileNotFoundError
+        If `in_path` does not exist.
+
+    Notes
+    -----
+    Export failures (`OSError`, `RuntimeError` from
+    `pf_utils.export_project_to_pfd`) are logged but not re-raised, so
+    the mapping JSON is still written even if the final export step
+    fails.
     """
     if pf is None:
         logger.error("PowerFactory Python API not available. Cannot run.")

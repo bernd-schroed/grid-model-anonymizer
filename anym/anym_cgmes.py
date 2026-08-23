@@ -2,7 +2,7 @@
 anym_cgmes.py  –  CGMES (XML/RDF) anonymizer
 ==============================================
 Anonymizes a CGMES bundle (zip archive, folder, or single XML file) using the
-same seed-based SHA-256 approach and mapping JSON as anym_PF / anym_csv.
+same seed-based SHA-256 approach and mapping JSON as anym_PF / anym_csv anym_json.
 
 Design rationale
 ----------------
@@ -23,132 +23,23 @@ Design rationale
 
 - Only fields that actually exist in the file are touched.
 
-Depends on: lxml, anym_PF (SeededNameAnonymizer etc.)
+Depends on: lxml, utils.py, cgmes_utils.py (SeededNameAnonymizer etc.)
 """
 
 # pylint: disable=c-extension-no-member
-from __future__ import annotations
+# from __future__ import annotations
 
 import logging
 import math
-import shutil
 import tempfile
-import zipfile
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Set, Tuple
 
 from lxml import etree
 
-from utils import utils
+from utils import cgmes_utils, utils
 
 logger = logging.getLogger("anym_cgmes.py")
-
-# ---------------------------------------------------------------------------
-# RDF namespace
-# ---------------------------------------------------------------------------
-RDF_NS = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
-RDF_ID = f"{{{RDF_NS}}}ID"
-RDF_ABOUT = f"{{{RDF_NS}}}about"
-RDF_RESOURCE = f"{{{RDF_NS}}}resource"
-
-# ---------------------------------------------------------------------------
-# Local-name suffixes of text elements whose content gets anonymized.
-# Matching is done on the local part after the last '}' in the Clark tag.
-# ---------------------------------------------------------------------------
-ANON_TEXT_LOCALS: Set[str] = {
-    "IdentifiedObject.name",
-    "IdentifiedObject.description",
-    "IdentifiedObject.shortName",
-    "IdentifiedObject.aliasName",
-    "Model.description",  # md:FullModel header – often contains TSO/DSO name
-}
-
-# GPS coordinate element local names (GL profile, CGMES 2.4 and 3.0)
-GPS_X_LOCALS: Set[str] = {
-    "PositionPoint.xPosition",  # longitude in CGMES GL
-    "CoordinatePair.xPosition",  # older profile variant
-}
-GPS_Y_LOCALS: Set[str] = {
-    "PositionPoint.yPosition",  # latitude in CGMES GL
-    "CoordinatePair.yPosition",
-}
-
-TIME_STAMP_LOCALS: Set[str] = {"Model.scenarioTime"}
-
-LINE_SPECS_LOCALS: Set[str] = {
-    "Conductor.length",
-    "ACLineSegment.b0ch",
-    "ACLineSegment.bch",
-    "ACLineSegment.g0ch",
-    "ACLineSegment.gch",
-    "ACLineSegment.r",
-    "ACLineSegment.r0",
-    "ACLineSegment.x",
-    "ACLineSegment.x0",
-}
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-def _local(tag: str) -> str:
-    """Clark notation {ns}localname -> localname."""
-    return tag.split("}")[-1] if "}" in tag else tag
-
-
-def _remap_id(old_id: str, seed: str, cim_forward: Dict[str, str]) -> str:
-    """Deterministically remap a single rdf:ID string (for --remap-ids mode)."""
-    if old_id in cim_forward:
-        return cim_forward[old_id]
-    new_id = utils.generate_seeded_uuid(old_id, seed)
-    cim_forward[old_id] = new_id
-    return new_id
-
-
-def _strip_hash(ref: str) -> str:
-    """Remove leading '#' from an rdf:resource / rdf:about value."""
-    return ref[1:] if ref.startswith("#") else ref
-
-
-def _get_parent_rdfinfo(element, rdf_tag):
-    parent = element.getparent()
-    return parent.get(rdf_tag)
-
-
-# ---------- Courtesy of Claude ------------
-def _cgmes_time_to_epoch(timestr: str) -> int:
-    """z.B. '1977-01-01T09:00:00Z' -> Sekunden seit 1970-01-01"""
-    dt = datetime.strptime(timestr, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
-    return int(dt.timestamp())
-
-
-def _epoch_to_cgmes_time(epoch: int) -> str:
-    """Sekunden seit 1970-01-01 -> '1977-01-01T09:00:00Z'"""
-    return datetime.fromtimestamp(epoch, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
-# ------------------------------------------
-
-# ---------------------------------------------------------------------------
-# XML I/O
-# ---------------------------------------------------------------------------
-
-
-def _parse_xml(path: Path) -> etree._ElementTree:
-    parser = etree.XMLParser(remove_comments=False, remove_blank_text=False)
-    return etree.parse(str(path), parser)
-
-
-def _serialise_xml(tree: etree._ElementTree, path: Path) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tree.write(
-        str(path),
-        xml_declaration=True,
-        encoding="utf-8",
-        pretty_print=True,
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -172,7 +63,7 @@ def _apply_gps_pair(
     Records the change in anonymizer.gps_mapping keyed by parent_id.
 
     Note: gps_transform is expected to be a pure translation (see
-    _build_geo_transform in anym_PF.py).  The _scale_back_to_valid_geo
+    build_geo_transform in utils.py).  The scale_back_to_valid_geo
     call below acts as a safety net for points very close to the poles.
     """
     try:
@@ -196,8 +87,8 @@ def _apply_gps_pair(
 
     # Global rotation + per-object jitter (up to 100 m)
     new_lat, new_lon = gps_transform(old_lat, old_lon)
-    r_m = utils.obj_unit_from_name(seed, "cgmes_gps_r", parent_id) * 100.0
-    theta = 2.0 * math.pi * utils.obj_unit_from_name(seed, "cgmes_gps_theta", parent_id)
+    r_m = utils.get_hash_float(seed, f"|cgmes_gps_r|{parent_id}") * 100.0
+    theta = 2.0 * math.pi * utils.get_hash_float(seed, f"|cgmes_gps_theta|{parent_id}")
     new_lat += utils.meters_to_deg_lat(r_m * math.sin(theta))
     new_lon += utils.meters_to_deg_lon(r_m * math.cos(theta), new_lat)
 
@@ -232,8 +123,10 @@ def _anonymize_tree(
     Modifies the parsed XML tree in-place.
 
     Steps:
-    1. GPS: collect x/y element pairs per parent, then transform/delete.
-    2. Text fields: anonymize IdentifiedObject.name / description / etc.
+    1. Time: Add Random amount of time to the timestamps.
+    2. GPS: collect x/y element pairs per parent, then transform/delete.
+    3. Line Length: Set lengths of transmission lines to 1 km.
+    4. Text fields: anonymize IdentifiedObject.name / description / etc.
     3. rdf:ID remapping (only if remap_ids=True).
     """
 
@@ -270,13 +163,13 @@ def _anonymize_tree(
     # ------------------------------------------------------------------
     # Step 3: line_length
     # ------------------------------------------------------------------
-    _anonymize_line_length(tree=tree, anonymizer=anonymizer)
-    # anonymizer=anonymizer, desc_delete=desc_delete)
+    _anonymize_line_specs(tree=tree, anonymizer=anonymizer)
 
     # ------------------------------------------------------------------
     # Step 4: text fields
     # ------------------------------------------------------------------
     _anonymize_text_fields(tree=tree, anonymizer=anonymizer, desc_delete=desc_delete)
+
     # ------------------------------------------------------------------
     # Step 5: rdf:ID remapping (optional, off by default)
     # ------------------------------------------------------------------
@@ -296,11 +189,15 @@ def _anonymize_gps(
     gps_transform,
     anonymizer: utils.SeededNameAnonymizer,
 ):
+    """
+    Get all the GPS Data and apply the transformation.
+    """
+
     def _parent_key(p: etree._Element) -> str:
-        v = p.get(RDF_ID) or ""
+        v = p.get(cgmes_utils.RDF_ID) or ""
         if v:
             return v
-        v = _strip_hash(p.get(RDF_ABOUT) or "")
+        v = cgmes_utils.strip_hash(p.get(cgmes_utils.RDF_ABOUT) or "")
         if v:
             return v
         return tree.getpath(p)  # unique XPath fallback
@@ -308,8 +205,8 @@ def _anonymize_gps(
     gps_buckets: Dict[str, Dict] = {}
 
     for el in tree.iter():
-        loc = _local(el.tag)
-        if loc not in GPS_X_LOCALS and loc not in GPS_Y_LOCALS:
+        loc = cgmes_utils.local(el.tag)
+        if loc not in cgmes_utils.GPS_X_LOCALS and loc not in cgmes_utils.GPS_Y_LOCALS:
             continue
 
         parent = el.getparent()
@@ -320,7 +217,7 @@ def _anonymize_gps(
         bucket = gps_buckets.setdefault(key, {})
         # A valid PositionPoint has exactly one xPosition and one yPosition,
         # so we see each slot exactly once per bucket.
-        if loc in GPS_X_LOCALS:
+        if loc in cgmes_utils.GPS_X_LOCALS:
             bucket["x_el"] = el
         else:
             bucket["y_el"] = el
@@ -347,32 +244,37 @@ def _anonymize_gps(
         )
 
 
-def _anonymize_line_length(
+def _anonymize_line_specs(
     tree: etree._ElementTree,
     *,
     anonymizer: utils.SeededNameAnonymizer,
 ):
-
+    """
+    Getting all line information, like length and impedance and alter them.
+    """
     mapping: Dict[str, float] = {}
     for el in tree.iter():
-        loc = _local(el.tag)
-        if loc not in LINE_SPECS_LOCALS:
+        loc = cgmes_utils.local(el.tag)
+        if loc not in cgmes_utils.LINE_SPECS_LOCALS:
             continue
+
         # getting the length of the element
         elem_value = float(el.text)
-        cur_rdf_id = _get_parent_rdfinfo(el, RDF_ID)
+        cur_rdf_id = cgmes_utils.get_parent_rdfinfo(el, cgmes_utils.RDF_ID)
 
+        # length is always set to 1 km
         if loc == "Conductor.length":
             mapping[loc] = elem_value
-            el.text = str(1)
+            el.text = str(1)  # 1km set
             anonymizer.line_mapping.setdefault(
                 cur_rdf_id,
                 mapping,
             )
             mapping: Dict[str, float] = {}
 
+        # every other spec is an impedance and is therefore slightly altered
         else:
-            alteration_seed = utils.seed_unit(
+            alteration_seed = utils.get_hash_float(
                 seed=anonymizer.seed,
                 tag=f"impedance_alteration_{loc}_{cur_rdf_id}",
             )
@@ -390,10 +292,13 @@ def _anonymize_text_fields(
     anonymizer: utils.SeededNameAnonymizer,
     desc_delete: bool,
 ):
+    """
+    check every element and anonymize it if it falls in the ANON_TEXT_LOCALS
+    """
     for el in tree.iter():
-        loc = _local(el.tag)
+        loc = cgmes_utils.local(el.tag)
 
-        if loc not in ANON_TEXT_LOCALS:
+        if loc not in cgmes_utils.ANON_TEXT_LOCALS:
             continue
         if not el.text or not el.text.strip():
             continue
@@ -415,46 +320,52 @@ def _anonymize_rdf(
     anonymizer: utils.SeededNameAnonymizer,
     remap_ids: bool,
 ):
+    """
+    only applys if remap_ids == True:
+
+    collect all rdf information and anonymize it
+    """
     if not remap_ids:
         return
 
     # Collect all current rdf:IDs in this tree first (for resource fixup)
     all_ids_before: Set[str] = set()
     for el in tree.iter():
-        raw = el.get(RDF_ID)
+        raw = el.get(cgmes_utils.RDF_ID)
         if raw:
             all_ids_before.add(raw)
-        raw = el.get(RDF_ABOUT)
+        raw = el.get(cgmes_utils.RDF_ABOUT)
         if raw:
-            all_ids_before.add(_strip_hash(raw))
+            all_ids_before.add(cgmes_utils.strip_hash(raw))
 
     # Build remap table for IDs found in this tree
     for old_id in all_ids_before:
         if old_id not in anonymizer.cim_forward:
-            _remap_id(old_id, seed, anonymizer.cim_forward)
+            cgmes_utils.remap_id(old_id, seed, anonymizer.cim_forward)
 
     # Apply remaps
     for el in tree.iter():
-        raw_id = el.get(RDF_ID)
+        raw_id = el.get(cgmes_utils.RDF_ID)
         if raw_id and raw_id in anonymizer.cim_forward:
-            el.set(RDF_ID, anonymizer.cim_forward[raw_id])
+            el.set(cgmes_utils.RDF_ID, anonymizer.cim_forward[raw_id])
 
-        raw_about = el.get(RDF_ABOUT)
+        raw_about = el.get(cgmes_utils.RDF_ABOUT)
         if raw_about:
-            bare = _strip_hash(raw_about)
+            bare = cgmes_utils.strip_hash(raw_about)
             if bare in anonymizer.cim_forward:
                 new_bare = anonymizer.cim_forward[bare]
                 el.set(
-                    RDF_ABOUT, "#" + new_bare if raw_about.startswith("#") else new_bare
+                    cgmes_utils.RDF_ABOUT,
+                    "#" + new_bare if raw_about.startswith("#") else new_bare,
                 )
 
-        raw_res = el.get(RDF_RESOURCE)
+        raw_res = el.get(cgmes_utils.RDF_RESOURCE)
         if raw_res:
-            bare = _strip_hash(raw_res)
+            bare = cgmes_utils.strip_hash(raw_res)
             if bare in anonymizer.cim_forward:
                 new_bare = anonymizer.cim_forward[bare]
                 el.set(
-                    RDF_RESOURCE,
+                    cgmes_utils.RDF_RESOURCE,
                     "#" + new_bare if raw_res.startswith("#") else new_bare,
                 )
 
@@ -464,211 +375,16 @@ def _anonymize_time(
     *,
     anonymizer: utils.SeededNameAnonymizer,
 ):
+    """
+    Get the TimeStamps and add the random amount of time to it.
+    """
     for el in tree.iter():
-        loc = _local(el.tag)
-        if loc not in TIME_STAMP_LOCALS:
+        loc = cgmes_utils.local(el.tag)
+        if loc not in cgmes_utils.TIME_STAMP_LOCALS:
             continue
-        cgmes_timestamp = _cgmes_time_to_epoch(el.text)
+        cgmes_timestamp = cgmes_utils.cgmes_time_to_epoch(el.text)
         new_epoch_timestamp = anonymizer.add_time(cgmes_timestamp)
-        el.text = _epoch_to_cgmes_time(new_epoch_timestamp)
-
-
-# ---------------------------------------------------------------------------
-# Per-tree restore pass
-# ---------------------------------------------------------------------------
-
-
-def _restore_tree(
-    tree: etree._ElementTree,
-    *,
-    anon_rev: Dict[str, str],
-    cim_rev: Dict[str, str],
-    time_rev: Dict[str, str],
-    gps_map: Dict[str, dict],
-    prefix: str,
-    line_map: Dict[str, str],
-) -> None:
-    """Reverse anonymization in-place."""
-
-    # Restore text fields
-    _restore_textfields(tree, anon_rev=anon_rev, prefix=prefix)
-    # Restore rdf:IDs (only relevant when remap_ids was used)
-    _restore_rdfids(tree, cim_rev=cim_rev)
-    # Restore GPS
-    _restore_gps(tree, gps_map=gps_map)
-    # Restore Line Lengths
-    _restore_line_length(tree, line_map=line_map)
-    # Restore Time
-    _restore_time(tree, time_rev=time_rev)
-
-
-def _restore_textfields(
-    tree: etree._ElementTree,
-    *,
-    anon_rev: Dict[str, str],
-    prefix: str,
-):
-    for el in tree.iter():
-        loc = _local(el.tag)
-        if loc in ANON_TEXT_LOCALS and el.text:
-            cur = el.text.strip()
-            if cur.startswith(prefix) and cur in anon_rev:
-                el.text = anon_rev[cur]
-
-
-def _restore_rdfids(
-    tree: etree._ElementTree,
-    *,
-    cim_rev: Dict[str, str],
-):
-    if cim_rev:
-        for el in tree.iter():
-            raw_id = el.get(RDF_ID)
-            if raw_id and raw_id in cim_rev:
-                el.set(RDF_ID, cim_rev[raw_id])
-
-            raw_about = el.get(RDF_ABOUT)
-            if raw_about:
-                bare = _strip_hash(raw_about)
-                if bare in cim_rev:
-                    orig = cim_rev[bare]
-                    el.set(RDF_ABOUT, "#" + orig if raw_about.startswith("#") else orig)
-
-            raw_res = el.get(RDF_RESOURCE)
-            if raw_res:
-                bare = _strip_hash(raw_res)
-                if bare in cim_rev:
-                    orig = cim_rev[bare]
-                    el.set(
-                        RDF_RESOURCE, "#" + orig if raw_res.startswith("#") else orig
-                    )
-
-
-def _restore_gps(
-    tree: etree._ElementTree,
-    *,
-    gps_map: Dict[str, dict],
-):
-    gps_buckets: Dict[str, Dict[str, etree._Element]] = {}
-    gps_key_by_elem_id: Dict[int, str] = {}
-
-    for el in tree.iter():
-        loc = _local(el.tag)
-        if loc not in GPS_X_LOCALS and loc not in GPS_Y_LOCALS:
-            continue
-        parent = el.getparent()
-        if parent is None:
-            continue
-
-        pid = id(parent)
-        if pid not in gps_key_by_elem_id:
-            raw_id = parent.get(RDF_ID) or _strip_hash(parent.get(RDF_ABOUT) or "")
-            gps_key_by_elem_id[pid] = raw_id if raw_id else str(pid)
-        key = gps_key_by_elem_id[pid]
-
-        bucket = gps_buckets.setdefault(key, {})
-        if loc in GPS_X_LOCALS:
-            bucket["x_el"] = el
-        else:
-            bucket["y_el"] = el
-
-    for parent_id, bucket in gps_buckets.items():
-        rec = gps_map.get(parent_id)
-        if rec is None:
-            continue
-        old = rec.get("old")
-        if not (isinstance(old, list) and len(old) == 2):
-            continue
-        old_lat, old_lon = float(old[0]), float(old[1])
-        x_el = bucket.get("x_el")
-        y_el = bucket.get("y_el")
-        if x_el is not None:
-            x_el.text = f"{old_lon:.6f}"
-        if y_el is not None:
-            y_el.text = f"{old_lat:.6f}"
-
-
-def _restore_line_length(
-    tree: etree._ElementTree,
-    *,
-    line_map: Dict[str, str],
-):
-    for el in tree.iter():
-        loc = _local(el.tag)
-        if loc not in LINE_SPECS_LOCALS:
-            continue
-        # getting the length of the element
-        rdf_id = _get_parent_rdfinfo(el, RDF_ID)
-        orig_value = float(line_map[rdf_id][loc])
-        el.text = str(orig_value)
-
-
-def _restore_time(
-    tree: etree._ElementTree,
-    *,
-    time_rev: Dict[str, str],
-):
-    for el in tree.iter():
-        loc = _local(el.tag)
-        if loc in TIME_STAMP_LOCALS:
-            anon_time_cgmes = el.text.strip()
-            anon_time_epoch = _cgmes_time_to_epoch(anon_time_cgmes)
-            orig_time_epoch = int(time_rev[str(anon_time_epoch)])
-            el.text = _epoch_to_cgmes_time(orig_time_epoch)
-
-
-# ---------------------------------------------------------------------------
-# Bundle I/O helpers
-# ---------------------------------------------------------------------------
-
-
-def _extract_bundle(src: Path, tmp_dir: Path) -> List[Tuple[str, Path]]:
-    """
-    Extract CGMES bundle (zip, directory, single XML) into tmp_dir.
-    Returns list of (relative_name, absolute_path) for all .xml files.
-    """
-    xml_files: List[Tuple[str, Path]] = []
-
-    if src.is_dir():
-        for f in sorted(src.rglob("*.xml")):
-            rel = str(f.relative_to(src))
-            dest = tmp_dir / rel
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(f, dest)
-            xml_files.append((rel, dest))
-
-    elif zipfile.is_zipfile(src):
-        with zipfile.ZipFile(src, "r") as zf:
-            zf.extractall(tmp_dir)
-        for f in sorted(tmp_dir.rglob("*.xml")):
-            rel = str(f.relative_to(tmp_dir))
-            xml_files.append((rel, f))
-
-    else:
-        # Treat as a single XML file
-        dest = tmp_dir / src.name
-        shutil.copy2(src, dest)
-        xml_files.append((src.name, dest))
-
-    return xml_files
-
-
-def _pack_bundle(
-    xml_files: List[Tuple[str, Path]],
-    out: Path,
-) -> None:
-    """Pack processed XML files back into a zip or copy to an output directory."""
-    if out.suffix.lower() == ".zip":
-        out.parent.mkdir(parents=True, exist_ok=True)
-        with zipfile.ZipFile(out, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-            for rel, path in xml_files:
-                zf.write(path, rel)
-    else:
-        out.mkdir(parents=True, exist_ok=True)
-        for rel, path in xml_files:
-            dest = out / rel
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(path, dest)
+        el.text = cgmes_utils.epoch_to_cgmes_time(new_epoch_timestamp)
 
 
 # ---------------------------------------------------------------------------
@@ -719,7 +435,7 @@ def anonymize_cgmes(
 
     with tempfile.TemporaryDirectory() as tmp_str:
         tmp_dir = Path(tmp_str)
-        xml_files = _extract_bundle(in_path, tmp_dir)
+        xml_files = cgmes_utils.extract_bundle(in_path, tmp_dir)
         logger.info(
             "  Found %d XML file(s): %s", len(xml_files), [r for r, _ in xml_files]
         )
@@ -727,7 +443,7 @@ def anonymize_cgmes(
         trees: List[Tuple[str, Path, etree._ElementTree]] = []
         for rel, path in xml_files:
             try:
-                trees.append((rel, path, _parse_xml(path)))
+                trees.append((rel, path, cgmes_utils.parse_xml(path)))
             except etree.XMLSyntaxError as exc:
                 logger.warning("  Skipping %s: %s", rel, exc)
 
@@ -742,10 +458,10 @@ def anonymize_cgmes(
                 desc_delete=desc,
                 remap_ids=remap_ids,
             )
-            _serialise_xml(tree, path)
+            cgmes_utils.serialise_xml(tree, path)
 
         out_path.parent.mkdir(parents=True, exist_ok=True)
-        _pack_bundle([(rel, path) for rel, path, _ in trees], out_path)
+        cgmes_utils.pack_bundle([(rel, path) for rel, path, _ in trees], out_path)
 
     utils.save_mapping_json(mapping_out_path, anonymizer)
     logger.info("  Mapping saved   : %s", mapping_out_path)
@@ -754,66 +470,3 @@ def anonymize_cgmes(
     logger.info("  rdf:IDs remapped: %d", len(anonymizer.cim_forward))
     logger.info("  GPS entries     : %d", len(anonymizer.gps_mapping))
     logger.info("=== anym_cgmes.py: Done ===")
-
-
-# ---------------------------------------------------------------------------
-# Public entrypoint: restore
-# ---------------------------------------------------------------------------
-
-
-def restore_cgmes(
-    in_path: Path,
-    out_path: Path,
-    mapping_path: Path,
-) -> None:
-    """
-    Reverse a previously anonymized CGMES bundle using the mapping JSON.
-
-    Parameters
-    ----------
-    in_path      : anonymized zip / folder / XML
-    out_path     : restored output
-    mapping_path : mapping JSON produced by anonymize_cgmes
-    """
-    in_path = Path(in_path)
-    out_path = Path(out_path)
-    mapping_path = Path(mapping_path)
-
-    logger.info("=== anym_cgmes.py: Start Restore ===")
-
-    line_map, anon_rev, time_rev, cim_rev, __, gps_map, prefix = utils.get_mappings(
-        mapping_path
-    )
-
-    with tempfile.TemporaryDirectory() as tmp_str:
-        tmp_dir = Path(tmp_str)
-        xml_files = _extract_bundle(in_path, tmp_dir)
-        logger.info(
-            "  Found %d XML file(s): %s", len(xml_files), [r for r, _ in xml_files]
-        )
-
-        trees: List[Tuple[str, Path, etree._ElementTree]] = []
-        for rel, path in xml_files:
-            try:
-                trees.append((rel, path, _parse_xml(path)))
-            except etree.XMLSyntaxError as exc:
-                logger.warning("  Skipping %s: %s", rel, exc)
-
-        for rel, path, tree in trees:
-            logger.info("  Restoring %s ...", rel)
-            _restore_tree(
-                tree,
-                anon_rev=anon_rev,
-                cim_rev=cim_rev,
-                time_rev=time_rev,
-                gps_map=gps_map,
-                prefix=prefix,
-                line_map=line_map,
-            )
-            _serialise_xml(tree, path)
-
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        _pack_bundle([(rel, path) for rel, path, _ in trees], out_path)
-
-    logger.info("  Output: %s", out_path)
-    logger.info("=== anym_cgmes.py: Restore Done ===")
