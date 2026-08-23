@@ -1,3 +1,22 @@
+"""
+restore_pf.py
+==============
+
+Reverses a previously anonymized PowerFactory project back to its
+original values, using the mapping JSON produced during
+anonymization.
+
+Given an anonymized .pfd project file and the corresponding mapping
+file, this module imports the project into PowerFactory and restores,
+in order: line types/lengths and GPS coordinates for deleted objects
+(`restore_line_type`, `restore_gps`), object names/attributes/
+descriptions/CIM RDF IDs via the unified anonymization mapping, GPS
+coordinates for objects that still exist under their (restored) CIM
+ID, and study-case timestamps (`restore_times`), before exporting the
+restored project back to .pfd via the public
+`run_powerfactory_restore` entrypoint.
+"""
+
 import logging
 import re
 from pathlib import Path
@@ -8,6 +27,15 @@ from utils import pf_utils, utils
 pf = pf_utils.import_powerfactory_module()
 logger = logging.getLogger("restore_pf.py")
 
+FIELDS = [
+    "sernum",
+    "constr",
+    "chr_name",
+    "dar_src",
+    "manuf",
+    "for_name",
+    "foreignKey",
+]
 
 # ----------------------------
 # Restore procedure (UNIFIED)
@@ -20,7 +48,7 @@ _ANON_RE = re.compile(r"\bANON_[0-9A-F]{6,}\b")  # 6+ damit auch längere Hashes
 def make_obj_dict(objects: List) -> Dict[str, object]:
     """
     Create a Dictionary from a list of objects with a clear key
-    to search make searching for certain objects easier
+    to make searching for certain objects easier
 
     Parameters
     ----------
@@ -137,6 +165,7 @@ def restore_gps_from_deletion(
         old_lat, old_lon = get_old_coordinates(coordinates_map)
         if old_lat is None:
             continue
+
         target = None
 
         cim_after = coordinates_map.get("cim_after")
@@ -159,6 +188,46 @@ def restore_gps_from_deletion(
         pf_utils.safe_set(target, "GPSlon", old_lon, verbose=False)
 
 
+def restore_gps_after_obscuring(
+    app, gps_map: Dict[str, Dict], cim_index_orig: Dict[str, object]
+):
+    """
+    The restoration of the gps data in a function. This represents
+    the firsecondst iteration of the gps restoration, that handles obscured
+    gps data
+
+    Parameters
+    app: PowerFactory Application
+
+    gps_map: Dict[str, Dict]
+        The mapping of the gps data. The key is the cim reference and
+        data is a dictionary with old and new gps coordinates
+    cim_index_orig: Dict[str, object]
+        The Cim References corresponding to each object.
+    """
+
+    for orig_cim, rec in gps_map.items():
+        if rec.get("deleted", False):
+            continue
+
+        try:
+            old_lat, old_lon = get_old_coordinates(rec)
+        except AttributeError:
+            continue
+
+        target = cim_index_orig.get(orig_cim)
+        if target is None:
+            fn = rec.get("full_name_after")
+            if isinstance(fn, str) and fn:
+                target = pf_utils.search_by_full_name_after(app, fn)
+
+        if target is None:
+            continue
+
+        pf_utils.safe_set(target, "GPSlat", old_lat, verbose=False)
+        pf_utils.safe_set(target, "GPSlon", old_lon, verbose=False)
+
+
 def restore_times(objects: List, time_rev: Dict):
     """
     A function to iterate through all objects. If they are an "IntCase" they are being restored.
@@ -173,23 +242,9 @@ def restore_times(objects: List, time_rev: Dict):
     for obj in objects:
         full = pf_utils.get_full_name(obj)
         if full.endswith("IntCase"):
-            restore_timestamp(obj, time_rev)
-
-
-def restore_timestamp(obj, time_rev):
-    """
-    restore the original timestamp of a study case object
-
-    Parameters
-    ----------
-    obj: object
-        The study case object
-    time_rev: Dict
-        The reverse mapping of the timestamps with the anonymized timestamp as key and the original
-    """
-    anym_time = int(pf_utils.get_float_attr(obj, "iStudyTime"))
-    orig_time = int(time_rev[str(anym_time)])
-    pf_utils.safe_set(obj, "iStudyTime", orig_time, verbose=False)
+            anym_time = int(pf_utils.get_float_attr(obj, "iStudyTime"))
+            orig_time = int(time_rev[str(anym_time)])
+            pf_utils.safe_set(obj, "iStudyTime", orig_time, verbose=False)
 
 
 def get_all_line_types(objects_dict: Dict[str, object]) -> Dict[str, object]:
@@ -301,6 +356,93 @@ def restore_gps_from_anonymization(
         pf_utils.safe_set(target, "GPSlon", old_lon, verbose=False)
 
 
+def restore_loc_name(obj, prefix: str, anon_rev: Dict[str, str]):
+    """
+    Restore all loc_names if they were anonymized
+
+    Parameters
+    ----------
+    obj : PowerFactory object
+        one object in the powerfactory project
+    prefix: str
+        What prefix was used for anonymized data
+    anon_rev : Dict[str, str]
+        Dict of the anonymized times and their original counterparts
+    """
+    # restore loc_name by checking for prefix
+    cur_name = pf_utils.get_loc_name(obj)
+    if isinstance(cur_name, str) and cur_name.startswith(prefix):
+        orig = anon_rev.get(cur_name)
+        if orig:
+            try:
+                obj.SetAttribute("loc_name", orig)
+            except AttributeError:
+                pass
+
+
+def restore_string_attributes(obj, prefix, anon_rev):
+    """
+    Restore all str attributes if they were anonymized
+
+    Parameters
+    ----------
+    obj : PowerFactory object
+        one object in the powerfactory project
+    prefix: str
+        What prefix was used for anonymized data
+    anon_rev : Dict[str, str]
+        Dict of the anonymized times and their original counterparts
+    """
+    for attr in FIELDS:
+        cur_val = pf_utils.get_str_attr(obj, attr)
+        if cur_val is None:
+            continue
+        cur_s = str(cur_val).strip()
+        if cur_s.startswith(prefix):
+            orig = anon_rev.get(cur_s)
+            if orig is not None:
+                pf_utils.set_str_attr(obj, attr, orig)
+
+
+def restore_desc(obj, anon_rev):
+    """
+    Restore all dexcriptions if they were deleted
+
+    Parameters
+    ----------
+    obj : PowerFactory object
+        one object in the powerfactory project
+    anon_rev : Dict[str, str]
+        Dict of the anonymized times and their original counterparts
+    """
+    cur_desc = pf_utils.get_str_attr(obj, "desc")
+    if cur_desc is not None:
+        cur_desc_s = str(cur_desc)
+        if cur_desc_s.strip() != "" and cur_desc_s != "Deleted":
+            restored = restore_anon_tokens_in_text(cur_desc_s, anon_rev)
+            restored = pf_utils.desc_normalize(restored).strip()
+            if restored != cur_desc_s:
+                pf_utils.safe_set(obj, "desc", restored, verbose=False)
+
+
+def restore_cim_rdfid(obj, cim_rev):
+    """
+    Restore all cim RDF IDs, if they were anonymized
+
+    Parameters
+    ----------
+    obj : PowerFactory object
+        one object in the powerfactory project
+    cim_rev : Dict[str, str]
+        Dict of the anonymized times and their original counterparts
+    """
+    ids = pf_utils.get_cim_rdf_id(obj)
+    if ids:
+        cur_id = ids[0]
+        if cur_id in cim_rev:
+            pf_utils.set_cim_rdf_id(obj, cim_rev[cur_id])
+
+
 def restore_from_mapping(app, mapping_path: Path):
     """
     Restore inside an already imported project using the mapping JSON:
@@ -341,57 +483,16 @@ def restore_from_mapping(app, mapping_path: Path):
     # ---------------------------------------------------------
     # 2) Restore loc_name, attributes, desc, cimRdfId
     # ---------------------------------------------------------
-    fields = [
-        "sernum",
-        "constr",
-        "chr_name",
-        "dar_src",
-        "manuf",
-        "for_name",
-        "foreignKey",
-    ]
+
     objects = pf_utils.collect_unique_objects_for_anonymization(app)
 
     pf_utils.pf_bulk_mode_begin(app)
     try:
         for obj in objects:
-            # restore loc_name by checking for prefix
-            cur_name = pf_utils.get_loc_name(obj)
-            if isinstance(cur_name, str) and cur_name.startswith(prefix):
-                orig = anon_rev.get(cur_name)
-                if orig:
-                    try:
-                        obj.SetAttribute("loc_name", orig)
-                    except AttributeError:
-                        pass
-
-            # restore generic string attributes by checking for prefix
-            for attr in fields:
-                cur_val = pf_utils.get_str_attr(obj, attr)
-                if cur_val is None:
-                    continue
-                cur_s = str(cur_val).strip()
-                if cur_s.startswith(prefix):
-                    orig = anon_rev.get(cur_s)
-                    if orig is not None:
-                        pf_utils.set_str_attr(obj, attr, orig)
-
-            # restore desc (only if it was anonymized; "Deleted" stays)
-            cur_desc = pf_utils.get_str_attr(obj, "desc")
-            if cur_desc is not None:
-                cur_desc_s = str(cur_desc)
-                if cur_desc_s.strip() != "" and cur_desc_s != "Deleted":
-                    restored = restore_anon_tokens_in_text(cur_desc_s, anon_rev)
-                    restored = pf_utils.desc_normalize(restored).strip()
-                    if restored != cur_desc_s:
-                        pf_utils.safe_set(obj, "desc", restored, verbose=False)
-
-            # restore cimRdfId
-            ids = pf_utils.get_cim_rdf_id(obj)
-            if ids:
-                cur_id = ids[0]
-                if cur_id in cim_rev:
-                    pf_utils.set_cim_rdf_id(obj, cim_rev[cur_id])
+            restore_loc_name(obj, prefix, anon_rev)
+            restore_string_attributes(obj, prefix, anon_rev)
+            restore_desc(obj, anon_rev)
+            restore_cim_rdfid(obj, cim_rev)
     finally:
         pf_utils.pf_bulk_mode_end(app)
 

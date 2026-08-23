@@ -141,6 +141,9 @@ def import_powerfactory_module():
 
 
 def get_p(p: Path) -> str:
+    """
+    wrapper to get the pathlib object p to a string format
+    """
     return os.fspath(Path(p).resolve())
 
 
@@ -315,11 +318,6 @@ def collect_unique_objects_for_anonymization(app) -> List:
     Build a deduplicated list of all objects to anonymize, including
     their parent chains.
 
-    Collects the base object set via PfObjects, then walks each
-    object's parent chain (up to "Network Data") and includes those
-    ancestors as well, deduplicating by full name (falling back to
-    class+loc_name if GetFullName fails).
-
     Returns
     -------
     List
@@ -376,11 +374,6 @@ def get_float_attr(obj, attr: str) -> Optional[float]:
 def safe_set(obj, attr, value, *, verbose: bool = False) -> bool:
     """
     Safely set a PF attribute, tolerating objects that don't support it.
-
-    Checks HasAttribute first, then attempts SetAttribute; on a
-    TypeError, retries with the value wrapped in a list (PF sometimes
-    expects list-typed values for string attributes). Failures are
-    swallowed and optionally logged via `verbose`.
 
     Returns
     -------

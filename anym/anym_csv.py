@@ -3,8 +3,8 @@ anym_csv.py - CSV anonymizer
 =============================
 
 Anonymizes (or restores) a single CSV file using the same seed-based
-deterministic token mapping shared with anym_PF / anym_cgmes, driven
-by an external mapping JSON so the same names/IDs stay consistent
+deterministic token mapping shared with anym_PF / anym_cgmes / anym_json,
+driven by an external mapping JSON so the same names/IDs stay consistent
 across PowerFactory, CGMES, and CSV exports of the same dataset.
 
 Workflow
@@ -65,14 +65,14 @@ _ID_RE = re.compile(
 
 
 def _clean_status(text: str) -> str:
-    # entfernt (EIN)/(AUS) inkl. drumherum spaces
+    # removes (ON)/(OFF) with the spaces next to it
     return _STATUS_RE.sub(" ", text).strip()
 
 
 def _anonymize_ids_in_text(text: str, anonymizer: utils.SeededNameAnonymizer) -> str:
     def repl(m: re.Match) -> str:
         tok = m.group(1)
-        # nur anonymisieren wenn es wirklich eine ID ist (hier: nur Ziffern + optional Lz/Pz)
+        # only anonymize if it actually is an ID
         return anonymizer.translate(tok)
 
     return _ID_RE.sub(repl, text)
@@ -124,13 +124,6 @@ def transform_csv_with_mapping(
     """
     Anonymize or restore a CSV file using a shared mapping JSON.
 
-    Loads an existing mapping (extending it) or starts a new one from
-    `seed`. Translates/restores the configured name column(s) and, if
-    present, anonymizes/restores embedded IDs within the
-    "Schalter mit Fernwirkanschluss" column while stripping status
-    markers. Writes the transformed rows to `csv_out` and, on
-    "anonymize" runs, persists the updated mapping to `mapping_path`.
-
     Parameters
     ----------
     csv_in, csv_out : input/output CSV paths.
@@ -163,7 +156,7 @@ def transform_csv_with_mapping(
             "gps_mapping": {},
         }
 
-    seed = str(data.get("seed", seed))  # fallback auf übergebenen seed
+    seed = str(data.get("seed", seed))  # fallback to given seed
     prefix = str(data.get("prefix", "ANON_") or "ANON_")
     length = int(data.get("length", 10) or 10)
 
@@ -202,7 +195,7 @@ def transform_csv_with_mapping(
 
         rows = []
         for row in reader:
-            # 1) Stationsnamen
+            # 1) Station Names
             for col in name_cols:
                 val = (row.get(col, "") or "").strip()
                 if not val:
@@ -213,7 +206,7 @@ def transform_csv_with_mapping(
                     if val.startswith(prefix):
                         row[col] = anon_rev.get(val, val)
 
-            # 2) Fernwirk-Spalte: Status löschen + IDs anonymisieren/restore
+            # 2) Fernwirk-Column: Delete Status + anonymize/restore IDs
             if fw_col:
                 raw = row.get(fw_col, "") or ""
                 cleaned = _clean_status(raw)
@@ -239,7 +232,7 @@ def transform_csv_with_mapping(
         writer.writeheader()
         writer.writerows(rows)
 
-    # always save mapping on anonymize (neu oder erweitert)
+    # always save mapping on anonymize (new oder extended)
     if mode.lower() == "anonymize":
         data["anon_mapping"] = anonymizer.forward
         mapping_path.parent.mkdir(parents=True, exist_ok=True)
