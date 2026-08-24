@@ -1,12 +1,15 @@
 # pylint: disable= wrong-import-position
 import logging
+import sys
 import time
 from pathlib import Path
 
-from anym.anym_cgmes import anonymize_cgmes, restore_cgmes
+sys.path.append(".")
+from anym.anym_cgmes import anonymize_cgmes
 from anym.anym_csv import transform_csv_with_mapping
 from anym.anym_json import anonymize_json_file, restore_json_anonymization
 from anym.anym_pf import run_powerfactory_import_export
+from restore.restore_cgmes import restore_cgmes
 from restore.restore_pf import run_powerfactory_restore
 
 logger = logging.getLogger("Test Anonymization-Restore")
@@ -103,20 +106,19 @@ def test_restore(anon_file, type_folder):
 def test_file_anon_restore(test_file: Path, type_folder: Path):
     anon_file = test_anonymization(test_file, type_folder)
     test_restore(anon_file, type_folder)
-    print(type_folder)
 
 
 def test_data_type(type_folder: Path):
     orig_data_folder = Path(type_folder, "orig")
     test_files = orig_data_folder.iterdir()
     for file in test_files:
-        print(file)
         test_file_anon_restore(file, type_folder)
 
 
 def test_anon_restore():
     test_dir = Path(__file__).parent.resolve()
-    data_type_dirs = test_dir.iterdir()
+    test_data_dir = Path(test_dir, "test_data")
+    data_type_dirs = test_data_dir.iterdir()
     for data_type_folder in data_type_dirs:
         if data_type_folder.is_dir():
             test_data_type(data_type_folder)

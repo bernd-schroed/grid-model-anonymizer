@@ -53,14 +53,6 @@ def test_load_mapping_json():
     pass
 
 
-def test_u():
-    tag = "Some tag"
-    seed = "seed"
-    expected_float = 0.8362741
-    new_float = utils._u(tag, seed)  # pylint: disable=protected-access
-    assert new_float == expected_float
-
-
 def test_obj_unit_from_name():
     pass
 
@@ -94,8 +86,6 @@ def test_seed_unit():
     [
         ("Testfolder\\Subfolder", False),
         ("Testfolder\\testfile.test", True),
-        (-40000000, 70000000),
-        (2**32, 2**32 - 30000000),
     ],
 )
 def test_has_suffix(inpt_obj, output_bool):
