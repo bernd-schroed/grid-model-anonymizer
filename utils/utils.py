@@ -119,7 +119,7 @@ class SeededNameAnonymizer:
 
     def _hash(self, text: str, length: int) -> str:
         payload = (self.seed + "|" + str(text).strip()).encode("utf-8")
-        return get_hash_str(payload, length)
+        return get_hash_str(payload, "", length).upper()
 
     def get_hash(self, text: str, length: int) -> str:
         """Public wrapper around `_hash` for deriving a deterministic hash of arbitrary text."""
