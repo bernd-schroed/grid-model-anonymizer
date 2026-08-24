@@ -64,6 +64,7 @@ the resulting mapping JSON.
 import hashlib
 import json
 import math
+import re
 from pathlib import Path
 from typing import Dict, Tuple
 
@@ -494,3 +495,13 @@ def has_suffix(full: str) -> bool:
         elif char == "\\":
             return False
     raise AttributeError("Full Objectname is neither Folder or Object.")
+
+
+# ----------- Courtesy of Claude ------------------------------------------
+def format_float(x: float) -> str:
+    s = str(x)
+    # e-05 -> e-5, e+08 -> e+8, aber e-15 bleibt e-15
+    return re.sub(r"([eE][+-])0+(\d)", r"\1\2", s)
+
+
+# -------------------------------------------------------------------------

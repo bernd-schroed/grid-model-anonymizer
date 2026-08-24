@@ -171,7 +171,7 @@ def _restore_line_length(
         # getting the length of the element
         rdf_id = cgmes_utils.get_parent_rdfinfo(el, cgmes_utils.RDF_ID)
         orig_value = float(line_map[rdf_id][loc])
-        el.text = str(orig_value)
+        el.text = utils.format_float(orig_value)
 
 
 def _restore_time(
