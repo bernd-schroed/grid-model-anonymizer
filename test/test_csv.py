@@ -21,6 +21,8 @@ def test_csv_anym():
         seed=seed,
     )
 
+    assert mapping_file.exists()
+
 
 @pytest.mark.dependency(depends=["test_csv_anym"])
 def test_csv_restore():

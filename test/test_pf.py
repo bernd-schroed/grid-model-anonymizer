@@ -28,6 +28,8 @@ def test_powerfactory_anym():
         gps=False,
     )
 
+    assert mapping_file.exists()
+
 
 @pytest.mark.dependency(depends=["test_powerfactory_anym"])
 def test_powerfactory_restore():

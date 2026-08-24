@@ -20,6 +20,8 @@ def test_json_anym():
         seed=seed,
     )
 
+    assert mapping_file.exists()
+
 
 @pytest.mark.dependency(depends=["test_json_anym"])
 def test_json_restore():

@@ -21,6 +21,8 @@ def test_cgmes_anym():
         mapping_out_path=mapping_file,
     )
 
+    assert mapping_file.exists()
+
 
 @pytest.mark.dependency(depends=["test_cgmes_anym"])
 def test_cgmes_restore():
