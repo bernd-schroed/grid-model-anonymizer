@@ -233,15 +233,21 @@ def restore_json_anonymization(
     logger.info("Starting Restoration of JSON Data")
 
     data = load_json_file(input_json)
-    mapping_data = utils.load_mapping_json(mapping_input)
-
-    prefix = str(mapping_data.get("prefix", "ANON_") or "ANON_")
+    (
+        _,
+        anon_rev,
+        _,
+        _,
+        _,
+        _,
+        prefix,
+    ) = utils.get_mappings(mapping_input)
 
     for element in data:
         if isinstance(element, dict):
             for key, value in element.items():
                 if isinstance(value, str) and value.startswith(prefix):
-                    original_value = mapping_data["anon_mapping"].get(value)
+                    original_value = anon_rev.get(value)
                     if original_value:
                         element[key] = original_value
     save_json_file(data, output_json)
