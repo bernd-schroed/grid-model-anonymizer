@@ -19,7 +19,7 @@ SEED = "Testing_seed"
 
 def test_anonymization(test_file, type_folder):
     input_file = test_file
-    output_file = Path(type_folder, "anon", test_file.name)
+    output_file = Path(type_folder, "anym", test_file.name)
     mapping_file = Path(type_folder, "mapping", test_file.stem, ".json")
     try:
         if type_folder.name == "cgmes":
