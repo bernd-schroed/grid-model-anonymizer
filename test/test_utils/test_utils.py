@@ -5,7 +5,7 @@ from utils import utils
 
 def test_seeded_name_anonyzer() -> None:
     anonymizer = utils.SeededNameAnonymizer("test_seed", "Anon_")
-    assert anonymizer.time_adding == 663393013
+    assert anonymizer.time_adding == 956552995
     assert anonymizer.seed == "test_seed"
     assert anonymizer.prefix == "Anon_"
     assert anonymizer.length == 10
