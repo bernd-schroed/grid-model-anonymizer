@@ -117,13 +117,10 @@ class SeededNameAnonymizer:
         old = "" if value is None else str(value)
         return self.translate(old)
 
-    def _hash(self, text: str, length: int) -> str:
-        payload = (self.seed + "|" + str(text).strip()).encode("utf-8")
-        return get_hash_str(payload, "", length).upper()
-
     def get_hash(self, text: str, length: int) -> str:
-        """Public wrapper around `_hash` for deriving a deterministic hash of arbitrary text."""
-        return self._hash(text, length)
+        """Public wrapper around `get_hash string` for deriving a
+        deterministic hash of arbitrary text with the self.seed."""
+        return get_hash_str(self.seed, text, length).upper()
 
     def translate(self, name: str) -> str:
         """
@@ -140,13 +137,13 @@ class SeededNameAnonymizer:
         if name in self.forward:
             return self.forward[name]
 
-        token = self._hash(name, self.length)
+        token = self.get_hash(name, self.length)
         new_name = f"{self.prefix}{token}"
 
         l = self.length
         while new_name in self.reverse and self.reverse[new_name] != name:
             l += 2
-            token = self._hash(name, l)
+            token = self.get_hash(name, l)
             new_name = f"{self.prefix}{token}"
 
         self.forward[name] = new_name
@@ -307,8 +304,7 @@ def generate_seeded_uuid(old_id: str, seed: str) -> str:
         A new UUID string of the form "_xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx".
     """
     clean = str(old_id).lstrip("_")
-    payload = (str(seed) + "|" + clean).encode("utf-8")
-    hex32 = get_hash_str(payload, 32)
+    hex32 = get_hash_str(seed, clean, 32)
     uuid = f"{hex32[:8]}-{hex32[8:12]}-{hex32[12:16]}-{hex32[16:20]}-{hex32[20:32]}"
     return "_" + uuid
 
