@@ -4,10 +4,14 @@ import pytest
 
 from anym.anym_pf import run_powerfactory_import_export
 from restore.restore_pf import run_powerfactory_restore
+from utils import pf_utils
 
 
 @pytest.mark.dependency()
 def test_powerfactory_anym():
+    if pf_utils.get_pf_version() is False:
+        pytest.skip("No PowerFactory installed")
+
     test_dir = Path(__file__).parent.resolve()
     data_dir = Path(test_dir, "test_data", "PowerFactory")
     input_file = Path(data_dir, "orig", "Texas Grid.pfd")
@@ -27,6 +31,9 @@ def test_powerfactory_anym():
 
 @pytest.mark.dependency(depends=["test_powerfactory_anym"])
 def test_powerfactory_restore():
+    if pf_utils.get_pf_version() is False:
+        pytest.skip("No PowerFactory installed")
+
     test_dir = Path(__file__).parent.resolve()
     data_dir = Path(test_dir, "test_data", "PowerFactory")
     input_file = Path(data_dir, "anym", "Texas Grid.pfd")
