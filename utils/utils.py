@@ -500,8 +500,11 @@ def has_suffix(full: str) -> bool:
 # ----------- Courtesy of Claude ------------------------------------------
 def format_float(x: float) -> str:
     s = str(x)
-    # e-05 -> e-5, e+08 -> e+8, aber e-15 bleibt e-15
-    return re.sub(r"([eE][+-])0+(\d)", r"\1\2", s)
+    # e-05 -> e-5, e+08 -> e+8 (führende Nullen im Exponenten entfernen)
+    s = re.sub(r"([eE][+-])0+(\d)", r"\1\2", s)
+    # 3.0 -> 3, 1.0e-5 -> 1e-5 (überflüssiges ".0" entfernen)
+    s = re.sub(r"\.0(?=$|[eE])", "", s)
+    return s
 
 
 # -------------------------------------------------------------------------
