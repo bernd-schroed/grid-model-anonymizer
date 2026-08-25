@@ -1,10 +1,53 @@
+import logging
 from pathlib import Path
+from typing import Dict
 
 import pytest
 
-from anym.anym_pf import run_powerfactory_import_export
-from restore.restore_pf import run_powerfactory_restore
-from utils import pf_utils
+from anym import anym_pf
+from restore import restore_pf
+from utils import pf_utils, utils
+
+pf = pf_utils.import_powerfactory_module()
+ATTRIBUTES = [
+    "iStudyTime",
+    "sernum",
+    "constr",
+    "chr_name",
+    "dar_src",
+    "manuf",
+    "for_name",
+    "foreignKey",
+    "desc",
+    "GPSlat",
+    "GPSlon",
+    "dline",
+    "typ_id",
+    "rline",
+    "xline",
+    "rline0",
+    "xline0",
+]
+
+logger = logging.getLogger("Test_pf")
+logging.basicConfig(level=logging.DEBUG, filename="test.log", encoding="utf-8")
+
+
+def get_example_data(path: Path, app) -> Dict[str, Dict[str, str | None]]:
+    project_name = path.stem
+
+    pf_utils.delete_project_if_exists(app, project_name)
+    pf_utils.import_pfd_into_current_user(app, path)
+    pf_utils.activate_project(app, project_name)
+    objects = pf_utils.collect_unique_objects_for_anonymization(app)
+    obj_dict = restore_pf.make_obj_dict(objects)
+    attr_dict = {}
+
+    for key, obj in obj_dict.items():
+        attr_dict[key] = {}
+        for attr in ATTRIBUTES:
+            attr_dict[key][attr] = pf_utils.get_str_attr(obj, attr)
+    return attr_dict
 
 
 @pytest.mark.dependency()
@@ -12,16 +55,14 @@ def test_powerfactory_anym():
     if pf_utils.get_pf_version() is False:
         pytest.skip("No PowerFactory installed")
 
-    test_dir = Path(__file__).parent.resolve()
-    data_dir = Path(test_dir, "test_data", "PowerFactory")
-    input_file = Path(data_dir, "orig", "Texas Grid.pfd")
-    output_file = Path(data_dir, "anym", "Texas Grid.pfd")
-    mapping_file = Path(data_dir, "mapping", "pfd_mapping_test.json")
+    orig_file, anym_file, _, mapping_file = utils.get_test_files(
+        "Texas Grid", ".pfd", "PowerFactory"
+    )
     seed = "test_seed"
 
-    run_powerfactory_import_export(
-        in_path=input_file,
-        out_path=output_file,
+    anym_pf.run_powerfactory_import_export(
+        in_path=orig_file,
+        out_path=anym_file,
         random_seed=seed,
         mapping_out_path=mapping_file,
         desc=False,
@@ -36,14 +77,29 @@ def test_powerfactory_restore():
     if pf_utils.get_pf_version() is False:
         pytest.skip("No PowerFactory installed")
 
-    test_dir = Path(__file__).parent.resolve()
-    data_dir = Path(test_dir, "test_data", "PowerFactory")
-    input_file = Path(data_dir, "anym", "Texas Grid.pfd")
-    output_file = Path(data_dir, "restore", "Texas Grid.pfd")
-    mapping_file = Path(data_dir, "mapping", "pfd_mapping_test.json")
+    orig_file, anym_file, restore_file, mapping_file = utils.get_test_files(
+        "Texas Grid", ".pfd", "PowerFactory"
+    )
 
-    run_powerfactory_restore(
-        in_path=input_file,
-        out_path=output_file,
+    restore_pf.run_powerfactory_restore(
+        in_path=anym_file,
+        out_path=restore_file,
         mapping_path=mapping_file,
     )
+
+    app = pf.GetApplication()
+    orig_data = get_example_data(orig_file, app)
+    restore_data = get_example_data(restore_file, app)
+
+    for obj_key, obj_data in orig_data.items():
+        for attr_name, attr_data in obj_data.items():
+            attr_restored = restore_data[obj_key][attr_name]
+            if attr_data == "":
+                continue
+            try:
+                assert attr_data == attr_restored
+            except AssertionError:
+                try:
+                    assert attr_data == attr_restored.replace(";", " ")
+                except AssertionError:
+                    assert attr_data == attr_restored + " "

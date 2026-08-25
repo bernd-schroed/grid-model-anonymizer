@@ -508,3 +508,18 @@ def format_float(x: float) -> str:
 
 
 # -------------------------------------------------------------------------
+
+
+def get_test_files(
+    filename: str, suffix: str, folder_name: str
+) -> Tuple[Path, Path, Path, Path]:
+
+    project_dir = Path(__file__).parent.parent.resolve()
+    test_dir = Path(project_dir, "test")
+    data_dir = Path(test_dir, "test_data", folder_name)
+    orig_file = Path(data_dir, "orig", filename + suffix)
+    anym_file = Path(data_dir, "anym", filename + suffix)
+    restore_file = Path(data_dir, "restore", filename + suffix)
+    mapping_file = Path(data_dir, "mapping", filename + ".json")
+
+    return orig_file, anym_file, restore_file, mapping_file
