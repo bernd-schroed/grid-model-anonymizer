@@ -83,12 +83,9 @@ def test_cgmes_restore_24():
     restore_data = get_test_examples(restore_file)
     orig_data = get_test_examples(orig_file)
 
-    try:
-        for orig_type, restore_type in zip(orig_data.values(), restore_data.values()):
-            for orig_el, restore_el in zip(orig_type, restore_type):
-                assert orig_el == pytest.approx(restore_el)
-    except AssertionError:
-        pass
+    for orig_type, restore_type in zip(orig_data.values(), restore_data.values()):
+        for orig_el, restore_el in zip(orig_type, restore_type):
+            assert orig_el == pytest.approx(restore_el)
 
 
 @pytest.mark.dependency()
