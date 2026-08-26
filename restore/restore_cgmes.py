@@ -150,9 +150,9 @@ def _restore_gps(
         x_el = bucket.get("x_el")
         y_el = bucket.get("y_el")
         if x_el is not None:
-            x_el.text = f"{old_lon:.6f}"
+            x_el.text = f"{old_lon}"
         if y_el is not None:
-            y_el.text = f"{old_lat:.6f}"
+            y_el.text = f"{old_lat}"
 
 
 def _restore_line_length(
