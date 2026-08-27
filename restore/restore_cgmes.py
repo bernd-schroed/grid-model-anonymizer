@@ -164,8 +164,12 @@ def _restore_line_length(
         if loc not in cgmes_utils.LINE_SPECS_LOCALS:
             continue
         # getting the length of the element
-        rdf_id = cgmes_utils.get_parent_rdfinfo(el, cgmes_utils.RDF_ID)
-        orig_value = float(line_map[rdf_id][loc])
+        try:
+            rdf_id = cgmes_utils.get_parent_rdfinfo(el, cgmes_utils.RDF_ID)
+            orig_value = float(line_map[rdf_id][loc])
+        except KeyError:
+            if el.base.endswith("SC_.xml"):
+                continue
         el.text = utils.format_float(orig_value)
 
 
