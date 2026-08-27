@@ -111,7 +111,6 @@ def _restore_gps(
     Check tree if elements applies to GPS Data, and set it to the old data
     """
     gps_buckets: Dict[str, Dict[str, etree._Element]] = {}
-    gps_key_by_elem_id: Dict[int, str] = {}
 
     for el in tree.iter():
         loc = cgmes_utils.local(el.tag)
@@ -123,13 +122,9 @@ def _restore_gps(
         if parent is None:
             continue
 
-        pid = id(parent)
-        if pid not in gps_key_by_elem_id:
-            raw_id = parent.get(cgmes_utils.RDF_ID) or cgmes_utils.strip_hash(
-                parent.get(cgmes_utils.RDF_ABOUT) or ""
-            )
-            gps_key_by_elem_id[pid] = raw_id if raw_id else str(pid)
-        key = gps_key_by_elem_id[pid]
+        key = parent.get(cgmes_utils.RDF_ID) or cgmes_utils.strip_hash(
+            parent.get(cgmes_utils.RDF_ABOUT) or ""
+        )
 
         # put the element in the gps bucket
         bucket = gps_buckets.setdefault(key, {})
