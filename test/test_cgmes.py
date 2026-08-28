@@ -85,12 +85,10 @@ def test_cgmes_restore_24():
 
     for orig_type, restore_type in zip(orig_data.values(), restore_data.values()):
         for orig_el, restore_el in zip(orig_type, restore_type):
-            if restore_el == "0.0":
-                restore_el = "0"
             if orig_el.endswith(" "):
                 restore_el += " "
 
-            assert orig_el == pytest.approx(restore_el)
+            assert orig_el == pytest.approx(utils.format_float(restore_el))
 
 
 @pytest.mark.dependency()
@@ -136,10 +134,6 @@ def test_cgmes_restore_3():
 
     for orig_type, restore_type in zip(orig_data.values(), restore_data.values()):
         for orig_el, restore_el in zip(orig_type, restore_type):
-            if restore_el == "0.0":
-                restore_el = "0"
             if orig_el.endswith(" "):
                 restore_el += " "
-
-            assert orig_el == pytest.approx(restore_el)
-
+            assert orig_el == pytest.approx(utils.format_float(restore_el))
