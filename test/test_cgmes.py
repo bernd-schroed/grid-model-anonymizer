@@ -43,15 +43,23 @@ def get_test_examples(path):
     return elems
 
 
+flag_list = list(itertools.product([True, False], repeat=3))
+cgmes_3_list = [entry + ("Texas_3",) for entry in flag_list]
+cgmes_24_list = [entry + ("Texas_2.4",) for entry in flag_list]
+test_list = cgmes_24_list + cgmes_3_list
+
+
 @pytest.mark.parametrize(
-    "gps_flag, desc_flag, id_flag", list(itertools.product([True, False], repeat=3))
+    "gps_flag, desc_flag, id_flag, filename",
+    test_list,
 )
 class Test_cgmes:
-
-    @pytest.mark.dependency(name="test_cgmes_anym_24")
-    def test_cgmes_anym_24(self, gps_flag: bool, desc_flag: bool, id_flag: bool):
+    @pytest.mark.dependency(name="test_cgmes_anym")
+    def test_cgmes_anym(
+        self, gps_flag: bool, desc_flag: bool, id_flag: bool, filename: str
+    ):
         orig_file, anym_file, _, mapping_file = utils.get_test_files(
-            "Texas_2.4", ".zip", "cgmes", [gps_flag, desc_flag, id_flag]
+            filename, ".zip", "cgmes", [gps_flag, desc_flag, id_flag]
         )
         seed = "test_seed"
         anonymize_cgmes(
@@ -76,10 +84,12 @@ class Test_cgmes:
 
         assert mapping_file.exists()
 
-    @pytest.mark.dependency(depends=["test_cgmes_anym_24"])
-    def test_cgmes_restore_24(self, gps_flag: bool, desc_flag: bool, id_flag: bool):
+    @pytest.mark.dependency(depends=["test_cgmes_anym"])
+    def test_cgmes_restore(
+        self, gps_flag: bool, desc_flag: bool, id_flag: bool, filename: str
+    ):
         orig_file, anym_file, restore_file, mapping_file = utils.get_test_files(
-            "Texas_2.4", ".zip", "cgmes", [gps_flag, desc_flag, id_flag]
+            filename, ".zip", "cgmes", [gps_flag, desc_flag, id_flag]
         )
 
         restore_cgmes(
@@ -102,55 +112,4 @@ class Test_cgmes:
                 assert orig_el == pytest.approx(utils.format_float(restore_el))
         utils.delete_test_data(anym_file, restore_file, mapping_file)
 
-    @pytest.mark.dependency(name="test_cgmes_anym_3")
-    def test_cgmes_anym_3(self, gps_flag: bool, desc_flag: bool, id_flag: bool):
-        orig_file, anym_file, _, mapping_file = utils.get_test_files(
-            "Texas_3", ".zip", "cgmes", [gps_flag, desc_flag, id_flag]
-        )
-        seed = "test_seed"
-        anonymize_cgmes(
-            in_path=orig_file,
-            out_path=anym_file,
-            seed=seed,
-            mapping_out_path=mapping_file,
-            desc=desc_flag,
-            gps=gps_flag,
-            remap_ids=id_flag,
-        )
 
-        anym_data = get_test_examples(anym_file)
-        orig_data = get_test_examples(orig_file)
-
-        for orig_type, anym_type in zip(orig_data.values(), anym_data.values()):
-            for orig_el, anym_el in zip(orig_type, anym_type):
-                assert orig_el != anym_el
-
-        for el in anym_data["Text_fields"]:
-            assert el.startswith("ANON_") or el == "Deleted"
-
-        assert mapping_file.exists()
-
-    @pytest.mark.dependency(depends=["test_cgmes_anym_3"])
-    def test_cgmes_restore_3(self, gps_flag: bool, desc_flag: bool, id_flag: bool):
-        orig_file, anym_file, restore_file, mapping_file = utils.get_test_files(
-            "Texas_3", ".zip", "cgmes", [gps_flag, desc_flag, id_flag]
-        )
-
-        restore_cgmes(
-            in_path=anym_file,
-            out_path=restore_file,
-            mapping_path=mapping_file,
-        )
-
-        restore_data = get_test_examples(restore_file)
-        orig_data = get_test_examples(orig_file)
-
-        for orig_type, restore_type in zip(orig_data.values(), restore_data.values()):
-            for orig_el, restore_el in zip(orig_type, restore_type):
-
-                if restore_el == "Deleted" and desc_flag:
-                    continue
-                if orig_el.endswith(" "):
-                    restore_el += " "
-                assert orig_el == pytest.approx(utils.format_float(restore_el))
-        utils.delete_test_data(anym_file, restore_file, mapping_file)
