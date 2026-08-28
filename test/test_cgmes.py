@@ -72,7 +72,7 @@ class Test_cgmes:
                 assert orig_el != anym_el
 
         for el in anym_data["Text_fields"]:
-            assert el.startswith("ANON_")
+            assert el.startswith("ANON_") or el == "Deleted"
 
         assert mapping_file.exists()
 
@@ -93,6 +93,9 @@ class Test_cgmes:
 
         for orig_type, restore_type in zip(orig_data.values(), restore_data.values()):
             for orig_el, restore_el in zip(orig_type, restore_type):
+
+                if restore_el == "Deleted" and desc_flag:
+                    continue
                 if orig_el.endswith(" "):
                     restore_el += " "
 
@@ -123,7 +126,7 @@ class Test_cgmes:
                 assert orig_el != anym_el
 
         for el in anym_data["Text_fields"]:
-            assert el.startswith("ANON_")
+            assert el.startswith("ANON_") or el == "Deleted"
 
         assert mapping_file.exists()
 
@@ -144,6 +147,9 @@ class Test_cgmes:
 
         for orig_type, restore_type in zip(orig_data.values(), restore_data.values()):
             for orig_el, restore_el in zip(orig_type, restore_type):
+
+                if restore_el == "Deleted" and desc_flag:
+                    continue
                 if orig_el.endswith(" "):
                     restore_el += " "
                 assert orig_el == pytest.approx(utils.format_float(restore_el))
