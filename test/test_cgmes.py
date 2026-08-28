@@ -1,16 +1,18 @@
 import itertools
+import sys
 import tempfile
 from pathlib import Path
 from typing import Dict, List
 
 import pytest
 
+sys.path.append(".")
 from anym.anym_cgmes import anonymize_cgmes
 from restore.restore_cgmes import restore_cgmes
 from utils import cgmes_utils, utils
 
 
-def get_test_examples(path):
+def get_test_examples(path, rdf_id_flag):
     with tempfile.TemporaryDirectory() as tmp_str:
         tmp_dir = Path(tmp_str)
     files = cgmes_utils.extract_bundle(path, tmp_dir)
@@ -19,6 +21,7 @@ def get_test_examples(path):
         "GPS": [],
         "Times": [],
         "Line_Specs": [],
+        "rdf_id": [],
     }
     for _, path in files:
         tree = cgmes_utils.parse_xml(path)
@@ -40,6 +43,12 @@ def get_test_examples(path):
             elif loc in cgmes_utils.LINE_SPECS_LOCALS:
                 elems["Line_Specs"].append(el.text)
 
+            raw = el.get(cgmes_utils.RDF_ID)
+            if raw and rdf_id_flag:
+                elems["rdf_id"].append(raw)
+                raw = el.get(cgmes_utils.RDF_ABOUT)
+            if raw and rdf_id_flag:
+                elems["rdf_id"].append(cgmes_utils.strip_hash(raw))
     return elems
 
 
@@ -72,8 +81,8 @@ class Test_cgmes:
             remap_ids=id_flag,
         )
 
-        anym_data = get_test_examples(anym_file)
-        orig_data = get_test_examples(orig_file)
+        anym_data = get_test_examples(anym_file, id_flag)
+        orig_data = get_test_examples(orig_file, id_flag)
 
         for orig_type, anym_type in zip(orig_data.values(), anym_data.values()):
             for orig_el, anym_el in zip(orig_type, anym_type):
@@ -98,18 +107,25 @@ class Test_cgmes:
             mapping_path=mapping_file,
         )
 
-        restore_data = get_test_examples(restore_file)
-        orig_data = get_test_examples(orig_file)
+        restore_data = get_test_examples(restore_file, id_flag)
+        orig_data = get_test_examples(orig_file, id_flag)
 
-        for orig_type, restore_type in zip(orig_data.values(), restore_data.values()):
+        for (key, orig_type), restore_type in zip(
+            orig_data.items(), restore_data.values()
+        ):
             for orig_el, restore_el in zip(orig_type, restore_type):
 
                 if restore_el == "Deleted" and desc_flag:
                     continue
                 if orig_el.endswith(" "):
                     restore_el += " "
-
-                assert orig_el == pytest.approx(utils.format_float(restore_el))
+                if key == "Line_Specs":
+                    assert orig_el == pytest.approx(utils.format_float(restore_el))
+                else:
+                    assert orig_el == pytest.approx(restore_el)
         utils.delete_test_data(anym_file, restore_file, mapping_file)
 
 
+if __name__ == "__main__":
+    Test_cgmes.test_cgmes_anym("x", True, True, True, "Texas_3")
+    Test_cgmes.test_cgmes_restore("x", True, True, True, "Texas_3")
