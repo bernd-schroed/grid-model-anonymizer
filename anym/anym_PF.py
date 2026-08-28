@@ -418,6 +418,7 @@ def anonymize_objects(
     seed: str,
     desc: bool,
     gps: bool,
+    remap_ids: bool,
     prefix: str = "ANON_",
     length: int = 10,
 ) -> utils.SeededNameAnonymizer:
@@ -505,8 +506,8 @@ def anonymize_objects(
                 empty_as_zero=True,
             )
 
-            # If you want to anonymize cimRdfId too, uncomment:
-            # anonymize_cim_rdf_id(obj, seed, anonymizer)
+            if remap_ids:
+                anonymize_cim_rdf_id(obj, seed, anonymizer)
 
             pf_utils.sanitize_desc(obj, desc, anonymizer)
 
@@ -574,6 +575,7 @@ def run_powerfactory_import_export(
     mapping_out_path: Path,
     desc: bool,
     gps: bool,
+    remap_ids: bool,
     prefix: str = "ANON_",
     hash_length: int = 10,
 ):
@@ -663,6 +665,7 @@ def run_powerfactory_import_export(
         seed=random_seed,
         desc=desc,
         gps=gps,
+        remap_ids=remap_ids,
         prefix=prefix,
         length=hash_length,
     )

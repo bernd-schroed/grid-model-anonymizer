@@ -296,6 +296,7 @@ def main():
                 mapping_out_path=args.mapping_file,
                 desc=args.desc,
                 gps=args.gps,
+                remap_ids=args.remap_ids,
             )
 
     # ----------------------------------------------------------------- CGMES
