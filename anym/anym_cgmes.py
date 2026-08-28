@@ -341,7 +341,9 @@ def _anonymize_rdf(
     # Build remap table for IDs found in this tree
     for old_id in all_ids_before:
         if old_id not in anonymizer.cim_forward:
-            cgmes_utils.remap_id(old_id, seed, anonymizer.cim_forward)
+            if old_id in anonymizer.cim_forward:
+                new_id = utils.generate_seeded_uuid(old_id, seed)
+                anonymizer.cim_forward[old_id] = new_id
 
     # Apply remaps
     for el in tree.iter():

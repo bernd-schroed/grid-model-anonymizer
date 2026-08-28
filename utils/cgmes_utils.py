@@ -28,11 +28,9 @@ import shutil
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Set, Tuple
+from typing import List, Set, Tuple
 
 from lxml import etree
-
-import utils
 
 # ---------------------------------------------------------------------------
 # RDF namespace
@@ -88,34 +86,6 @@ def local(tag: str) -> str:
     Strip the namespace off a Clark-notation XML tag.
     """
     return tag.split("}")[-1] if "}" in tag else tag
-
-
-def remap_id(old_id: str, seed: str, cim_forward: Dict[str, str]) -> str:
-    """
-    Deterministically remap a single rdf:ID string (for --remap-ids mode).
-
-    Parameters
-    ----------
-    old_id : str
-        The original rdf:ID (or rdf:about/resource, hash-stripped)
-        value to remap.
-    seed : str
-        Seed used to make the UUID generation deterministic and
-        reproducible.
-    cim_forward : Dict[str, str]
-        Mutable forward-mapping cache from old ID to new ID; updated
-        in place with any newly generated mapping.
-
-    Returns
-    -------
-    str
-        The (new or cached) remapped ID.
-    """
-    if old_id in cim_forward:
-        return cim_forward[old_id]
-    new_id = utils.generate_seeded_uuid(old_id, seed)
-    cim_forward[old_id] = new_id
-    return new_id
 
 
 def strip_hash(ref: str) -> str:
