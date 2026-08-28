@@ -66,7 +66,7 @@ import json
 import math
 import re
 from pathlib import Path
-from typing import Dict, Tuple
+from typing import Dict, List, Tuple
 
 
 # ----------------------------
@@ -511,15 +511,28 @@ def format_float(x: float) -> str:
 
 
 def get_test_files(
-    filename: str, suffix: str, folder_name: str
+    filename: str, suffix: str, folder_name: str, param_list: List | None = None
 ) -> Tuple[Path, Path, Path, Path]:
+
+    created_file_name = filename
+    for param in param_list:
+        if param is None:
+            created_file_name += "None"
+        else:
+            created_file_name += str(param)
 
     project_dir = Path(__file__).parent.parent.resolve()
     test_dir = Path(project_dir, "test")
     data_dir = Path(test_dir, "test_data", folder_name)
     orig_file = Path(data_dir, "orig", filename + suffix)
-    anym_file = Path(data_dir, "anym", filename + suffix)
-    restore_file = Path(data_dir, "restore", filename + suffix)
-    mapping_file = Path(data_dir, "mapping", filename + ".json")
+    anym_file = Path(data_dir, "anym", created_file_name + suffix)
+    restore_file = Path(data_dir, "restore", created_file_name + suffix)
+    mapping_file = Path(data_dir, "mapping", created_file_name + ".json")
 
     return orig_file, anym_file, restore_file, mapping_file
+
+
+def delete_test_data(anym_file: Path, restore_file: Path, mapping_file: Path):
+    anym_file.unlink()
+    restore_file.unlink()
+    mapping_file.unlink()
