@@ -1,3 +1,4 @@
+import itertools
 import logging
 from pathlib import Path
 from typing import Dict
@@ -50,56 +51,62 @@ def get_example_data(path: Path, app) -> Dict[str, Dict[str, str | None]]:
     return attr_dict
 
 
-@pytest.mark.dependency()
-def test_powerfactory_anym():
-    if pf_utils.get_pf_version() is False:
-        pytest.skip("No PowerFactory installed")
+@pytest.mark.parametrize(
+    "gps_flag, desc_flag, id_flag", list(itertools.product([True, False], repeat=3))
+)
+class Test_PF:
 
-    orig_file, anym_file, _, mapping_file = utils.get_test_files(
-        "Texas Grid", ".pfd", "PowerFactory"
-    )
-    seed = "test_seed"
+    @pytest.mark.dependency()
+    def test_powerfactory_anym(self, gps_flag: bool, desc_flag: bool, id_flag: bool):
+        if pf_utils.get_pf_version() is False:
+            pytest.skip("No PowerFactory installed")
 
-    anym_pf.run_powerfactory_import_export(
-        in_path=orig_file,
-        out_path=anym_file,
-        random_seed=seed,
-        mapping_out_path=mapping_file,
-        desc=False,
-        gps=False,
-    )
+        orig_file, anym_file, _, mapping_file = utils.get_test_files(
+            "Texas Grid", ".pfd", "PowerFactory"
+        )
+        seed = "test_seed"
 
-    assert mapping_file.exists()
+        anym_pf.run_powerfactory_import_export(
+            in_path=orig_file,
+            out_path=anym_file,
+            random_seed=seed,
+            mapping_out_path=mapping_file,
+            desc=desc_flag,
+            gps=gps_flag,
+            remap_ids=id_flag,
+        )
 
+        assert mapping_file.exists()
 
-@pytest.mark.dependency(depends=["test_powerfactory_anym"])
-def test_powerfactory_restore():
-    if pf_utils.get_pf_version() is False:
-        pytest.skip("No PowerFactory installed")
+    @pytest.mark.dependency(depends=["test_powerfactory_anym"])
+    def test_powerfactory_restore(self, gps_flag: bool, desc_flag: bool, id_flag: bool):
+        if pf_utils.get_pf_version() is False:
+            pytest.skip("No PowerFactory installed")
 
-    orig_file, anym_file, restore_file, mapping_file = utils.get_test_files(
-        "Texas Grid", ".pfd", "PowerFactory"
-    )
+        orig_file, anym_file, restore_file, mapping_file = utils.get_test_files(
+            "Texas Grid", ".pfd", "PowerFactory", [gps_flag, desc_flag, id_flag]
+        )
 
-    restore_pf.run_powerfactory_restore(
-        in_path=anym_file,
-        out_path=restore_file,
-        mapping_path=mapping_file,
-    )
+        restore_pf.run_powerfactory_restore(
+            in_path=anym_file,
+            out_path=restore_file,
+            mapping_path=mapping_file,
+        )
 
-    app = pf.GetApplication()
-    orig_data = get_example_data(orig_file, app)
-    restore_data = get_example_data(restore_file, app)
+        app = pf.GetApplication()
+        orig_data = get_example_data(orig_file, app)
+        restore_data = get_example_data(restore_file, app)
 
-    for obj_key, obj_data in orig_data.items():
-        for attr_name, attr_data in obj_data.items():
-            attr_restored = restore_data[obj_key][attr_name]
-            if attr_data == "":
-                continue
-            try:
-                assert attr_data == attr_restored
-            except AssertionError:
+        for obj_key, obj_data in orig_data.items():
+            for attr_name, attr_data in obj_data.items():
+                attr_restored = restore_data[obj_key][attr_name]
+                if attr_data == "":
+                    continue
                 try:
-                    assert attr_data == attr_restored.replace(";", " ")
+                    assert attr_data == attr_restored
                 except AssertionError:
-                    assert attr_data == attr_restored + " "
+                    try:
+                        assert attr_data == attr_restored.replace(";", " ")
+                    except AssertionError:
+                        assert attr_data == attr_restored + " "
+        utils.delete_test_data(anym_file, restore_file, mapping_file)

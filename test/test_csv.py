@@ -26,48 +26,52 @@ def get_example_data(csv_in, columns: Optional[List[str]] = None):
         return elems
 
 
-@pytest.mark.dependency()
-def test_csv_anym():
-    orig_file, anym_file, _, mapping_file = utils.get_test_files(
-        "csv_test", ".csv", "CSV"
-    )
-    seed = "test_seed"
-    anym_csv.transform_csv_with_mapping(
-        csv_in=orig_file,
-        csv_out=anym_file,
-        mapping_path=mapping_file,
-        mode="anonymize",
-        seed=seed,
-    )
+@pytest.mark.parametrize("columns", [["Name Ortsnetzstation"], None])
+class Test_CSV:
 
-    orig_data = get_example_data(orig_file)
-    anym_data = get_example_data(anym_file)
+    @pytest.mark.dependency(name="test_csv_anym")
+    def test_csv_anym(self, columns):
+        orig_file, anym_file, _, mapping_file = utils.get_test_files(
+            "csv_test", ".csv", "CSV", [columns]
+        )
+        seed = "test_seed"
+        anym_csv.transform_csv_with_mapping(
+            csv_in=orig_file,
+            csv_out=anym_file,
+            mapping_path=mapping_file,
+            mode="anonymize",
+            seed=seed,
+            columns=columns,
+        )
 
-    for orig_type, anym_type in zip(orig_data.values(), anym_data.values()):
-        for orig_el, anym_el in zip(orig_type, anym_type):
-            assert orig_el != anym_el
-            assert anym_el.startswith("ANON_")
-    assert mapping_file.exists()
+        orig_data = get_example_data(orig_file)
+        anym_data = get_example_data(anym_file)
 
+        for orig_type, anym_type in zip(orig_data.values(), anym_data.values()):
+            for orig_el, anym_el in zip(orig_type, anym_type):
+                assert orig_el != anym_el
+                assert anym_el.startswith("ANON_")
+        assert mapping_file.exists()
 
-@pytest.mark.dependency(depends=["test_csv_anym"])
-def test_csv_restore():
-    orig_file, anym_file, restore_file, mapping_file = utils.get_test_files(
-        "csv_test", ".csv", "CSV"
-    )
-    seed = "test_seed"
+    @pytest.mark.dependency(depends=["test_csv_anym"])
+    def test_csv_restore(self, columns):
+        orig_file, anym_file, restore_file, mapping_file = utils.get_test_files(
+            "csv_test", ".csv", "CSV", [columns]
+        )
+        seed = "test_seed"
 
-    anym_csv.transform_csv_with_mapping(
-        csv_in=anym_file,
-        csv_out=restore_file,
-        mapping_path=mapping_file,
-        mode="restore",
-        seed=seed,
-    )
-    orig_data = get_example_data(orig_file)
-    restore_data = get_example_data(restore_file)
+        anym_csv.transform_csv_with_mapping(
+            csv_in=anym_file,
+            csv_out=restore_file,
+            mapping_path=mapping_file,
+            mode="restore",
+            seed=seed,
+        )
+        orig_data = get_example_data(orig_file)
+        restore_data = get_example_data(restore_file)
 
-    for orig_type, restore_data in zip(orig_data.values(), restore_data.values()):
-        for orig_el, restore_data in zip(orig_type, restore_data):
-            assert orig_el == restore_data
-    assert mapping_file.exists()
+        for orig_type, restore_data in zip(orig_data.values(), restore_data.values()):
+            for orig_el, restore_data in zip(orig_type, restore_data):
+                assert orig_el == restore_data
+        assert mapping_file.exists()
+        utils.delete_test_data(anym_file, restore_file, mapping_file)
