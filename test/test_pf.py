@@ -51,6 +51,7 @@ def get_example_data(path: Path, app) -> Dict[str, Dict[str, str | None]]:
     return attr_dict
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize(
     "gps_flag, desc_flag, id_flag", list(itertools.product([True, False], repeat=3))
 )

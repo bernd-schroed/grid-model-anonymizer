@@ -58,6 +58,7 @@ cgmes_24_list = [entry + ("Texas_2.4",) for entry in flag_list]
 test_list = cgmes_24_list + cgmes_3_list
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize(
     "gps_flag, desc_flag, id_flag, filename",
     test_list,
