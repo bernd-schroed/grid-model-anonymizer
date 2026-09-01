@@ -1,3 +1,5 @@
+"""Round-trip tests for PowerFactory project anonymization and restoration."""
+
 import itertools
 import logging
 from pathlib import Path
@@ -35,6 +37,7 @@ logging.basicConfig(level=logging.DEBUG, filename="test.log", encoding="utf-8")
 
 
 def get_example_data(path: Path, app) -> Dict[str, Dict[str, str | None]]:
+    """Import a PowerFactory project and collect tracked attribute values for every object."""
     project_name = path.stem
 
     pf_utils.delete_project_if_exists(app, project_name)
@@ -55,10 +58,14 @@ def get_example_data(path: Path, app) -> Dict[str, Dict[str, str | None]]:
 @pytest.mark.parametrize(
     "gps_flag, desc_flag, id_flag", list(itertools.product([True, False], repeat=3))
 )
-class Test_PF:
+class TestPowerFactory:
+    """Round-trip tests for PowerFactory project anonymization and restoration,
+    requiring PowerFactory."""
 
     @pytest.mark.dependency()
     def test_powerfactory_anym(self, gps_flag: bool, desc_flag: bool, id_flag: bool):
+        """Check that anonymizing a PowerFactory project writes a mapping
+        file (skipped if PF is absent)."""
         if pf_utils.get_pf_version() is False:
             pytest.skip("No PowerFactory installed")
 
@@ -81,6 +88,8 @@ class Test_PF:
 
     @pytest.mark.dependency(depends=["test_powerfactory_anym"])
     def test_powerfactory_restore(self, gps_flag: bool, desc_flag: bool, id_flag: bool):
+        """Check that restoring an anonymized PowerFactory project recovers
+        original attribute values."""
         if pf_utils.get_pf_version() is False:
             pytest.skip("No PowerFactory installed")
 

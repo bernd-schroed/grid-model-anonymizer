@@ -1,3 +1,5 @@
+"""Round-trip tests for JSON anonymization and restoration."""
+
 import pytest
 
 from anym import anym_json
@@ -11,10 +13,12 @@ cats = [
 
 
 @pytest.mark.parametrize("categories", cats)
-class Test_JSON:
+class TestJSON:
+    """Round-trip tests for JSON anonymization and restoration across category selections."""
 
     @pytest.mark.dependency(name="test_json_anym")
     def test_json_anym(self, categories):
+        """Check that anonymization only changes fields in the selected categories."""
         if categories is None:
             orig_file, anym_file, _, mapping_file = utils.get_test_files(
                 "json_test_data",
@@ -57,6 +61,7 @@ class Test_JSON:
 
     @pytest.mark.dependency(depends=["test_json_anym"])
     def test_json_restore(self, categories):
+        """Check that restoring an anonymized JSON file recovers the original values."""
         if categories is None:
             orig_file, anym_file, restore_file, mapping_file = utils.get_test_files(
                 "json_test_data",

@@ -1,18 +1,19 @@
+"""Round-trip tests for CGMES bundle anonymization and restoration."""
+
 import itertools
-import sys
 import tempfile
 from pathlib import Path
 from typing import Dict, List
 
 import pytest
 
-sys.path.append(".")
 from anym.anym_cgmes import anonymize_cgmes
 from restore.restore_cgmes import restore_cgmes
 from utils import cgmes_utils, utils
 
 
 def get_test_examples(path, rdf_id_flag):
+    """Extract text, GPS, time, line-spec, and rdf-id values from a CGMES bundle for comparison."""
     with tempfile.TemporaryDirectory() as tmp_str:
         tmp_dir = Path(tmp_str)
     files = cgmes_utils.extract_bundle(path, tmp_dir)
@@ -63,11 +64,15 @@ test_list = cgmes_24_list + cgmes_3_list
     "gps_flag, desc_flag, id_flag, filename",
     test_list,
 )
-class Test_cgmes:
+class TestCGMES:
+    """Round-trip tests for CGMES anonymization and restoration across
+    GPS/desc/id flag combinations."""
+
     @pytest.mark.dependency(name="test_cgmes_anym")
     def test_cgmes_anym(
         self, gps_flag: bool, desc_flag: bool, id_flag: bool, filename: str
     ):
+        """Check that anonymize_cgmes changes all sensitive fields and writes a mapping file."""
         orig_file, anym_file, _, mapping_file = utils.get_test_files(
             filename, ".zip", "cgmes", [gps_flag, desc_flag, id_flag]
         )
@@ -98,6 +103,7 @@ class Test_cgmes:
     def test_cgmes_restore(
         self, gps_flag: bool, desc_flag: bool, id_flag: bool, filename: str
     ):
+        """Check that restore_cgmes recovers the original data from the anonymized file."""
         orig_file, anym_file, restore_file, mapping_file = utils.get_test_files(
             filename, ".zip", "cgmes", [gps_flag, desc_flag, id_flag]
         )
@@ -127,6 +133,5 @@ class Test_cgmes:
         utils.delete_test_data(anym_file, restore_file, mapping_file)
 
 
-if __name__ == "__main__":
-    Test_cgmes.test_cgmes_anym("x", True, True, True, "Texas_3")
-    Test_cgmes.test_cgmes_restore("x", True, True, True, "Texas_3")
+def test_apply_gps_pair():
+    """Placeholder for apply_gps_pair tests."""

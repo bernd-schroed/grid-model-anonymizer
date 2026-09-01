@@ -499,6 +499,20 @@ def has_suffix(full: str) -> bool:
 
 # ----------- Courtesy of Claude ------------------------------------------
 def format_float(x: float) -> str:
+    """
+    Format a float without a redundant ".0" or leading zeros in the exponent.
+
+    Parameters
+    ----------
+    x : float
+        The value to format.
+
+    Returns
+    -------
+    str
+        The formatted string, e.g. "3" instead of "3.0", or "1e-5"
+        instead of "1.0e-05".
+    """
     s = str(x)
     # e-05 -> e-5, e+08 -> e+8 (führende Nullen im Exponenten entfernen)
     s = re.sub(r"([eE][+-])0+(\d)", r"\1\2", s)
@@ -510,10 +524,36 @@ def format_float(x: float) -> str:
 # -------------------------------------------------------------------------
 
 
+# ---------------------------- test helpers -------------------------------
+
+
 def get_test_files(
     filename: str, suffix: str, folder_name: str, param_list: List | None = None
 ) -> Tuple[Path, Path, Path, Path]:
+    """
+    Build the original, anonymized, restored, and mapping file paths for a test case.
 
+    The anonymized/restored/mapping filenames are suffixed with the
+    stringified `param_list` entries (parametrization flags), so that
+    different parameter combinations for the same base `filename` get
+    distinct, non-colliding paths under `test/test_data/<folder_name>`.
+
+    Parameters
+    ----------
+    filename : str
+        Base name of the original test file (without suffix).
+    suffix : str
+        File extension to append, including the dot (e.g. ".csv").
+    folder_name : str
+        Subfolder under `test/test_data` for this format (e.g. "CSV").
+    param_list : List | None
+        Parametrization values used to disambiguate generated filenames.
+
+    Returns
+    -------
+    Tuple[Path, Path, Path, Path]
+        The (orig_file, anym_file, restore_file, mapping_file) paths.
+    """
     created_file_name = filename
     for param in param_list:
         if param is None:
@@ -533,6 +573,18 @@ def get_test_files(
 
 
 def delete_test_data(anym_file: Path, restore_file: Path, mapping_file: Path):
+    """
+    Delete the anonymized, restored, and mapping files produced by a test run.
+
+    Parameters
+    ----------
+    anym_file : Path
+        Path to the anonymized file to remove.
+    restore_file : Path
+        Path to the restored file to remove.
+    mapping_file : Path
+        Path to the mapping JSON file to remove.
+    """
     anym_file.unlink()
     restore_file.unlink()
     mapping_file.unlink()

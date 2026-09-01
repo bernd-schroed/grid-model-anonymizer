@@ -1,3 +1,5 @@
+"""Round-trip tests for CSV anonymization and restoration."""
+
 import csv
 from typing import Dict, List, Optional
 
@@ -6,8 +8,11 @@ import pytest
 from anym import anym_csv
 from utils import utils
 
+# pylint: disable=protected-access
+
 
 def get_example_data(csv_in, columns: Optional[List[str]] = None):
+    """Read the given CSV and collect values from the selected name columns for comparison."""
     dialect = anym_csv._detect_csv_dialect(csv_in)
 
     with open(csv_in, encoding="utf-8-sig", newline="") as f_in:
@@ -27,10 +32,12 @@ def get_example_data(csv_in, columns: Optional[List[str]] = None):
 
 
 @pytest.mark.parametrize("columns", [["Name Ortsnetzstation"], None])
-class Test_CSV:
+class TestCSV:
+    """Round-trip tests for CSV anonymization and restoration with different column selections."""
 
     @pytest.mark.dependency(name="test_csv_anym")
     def test_csv_anym(self, columns):
+        """Check that CSV anonymization changes selected columns and writes a mapping file."""
         orig_file, anym_file, _, mapping_file = utils.get_test_files(
             "csv_test", ".csv", "CSV", [columns]
         )
@@ -55,6 +62,7 @@ class Test_CSV:
 
     @pytest.mark.dependency(depends=["test_csv_anym"])
     def test_csv_restore(self, columns):
+        """Check that restoring an anonymized CSV recovers the original column values."""
         orig_file, anym_file, restore_file, mapping_file = utils.get_test_files(
             "csv_test", ".csv", "CSV", [columns]
         )
@@ -75,3 +83,7 @@ class Test_CSV:
                 assert orig_el == restore_data
         assert mapping_file.exists()
         utils.delete_test_data(anym_file, restore_file, mapping_file)
+
+
+def test_pick_columns():
+    """Placeholder for _pick_columns tests."""
