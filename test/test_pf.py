@@ -120,3 +120,81 @@ class TestPowerFactory:
                     except AssertionError:
                         assert attr_data == attr_restored + " "
         utils.delete_test_data(anym_file, restore_file, mapping_file)
+
+
+@pytest.mark.parametrize("graphic_name", ["Add_name_here"])
+def test_load_flow_results(graphic_name):
+    """Check that load_flow_results correctly loads and parses a flow results graphic file."""
+    if pf_utils.get_pf_version() is False:
+        pytest.skip("No PowerFactory installed")
+
+    test_path = (
+        Path(__file__).parent.parent.resolve() / "test_data" / "general" / graphic_name
+    )
+
+    app = pf.GetApplication()
+    pf_utils.delete_project_if_exists(app, graphic_name)
+    pf_utils.import_pfd_into_current_user(app, test_path)
+    pf_utils.activate_project(app, graphic_name)
+
+    results = pf_utils.load_flow_results(app, graphic_name)
+    assert results is not None
+
+
+def print_snapshot_of_grid(
+    strng_graphic_name, obj_substat=None, state_indx: int = 0, scaling_fac=1
+):
+    """
+    Takes a snapshot of the current switching state and exports it as pdf file.
+
+    Input:
+    - strng_graphic_name: string name of the graphic that is to be exported including the graphic ending ".IntGrfnet" (e.g. "D2.IntGrfnet")
+    - obj_substat: pf object of the substation, if not given, the entire diagram is exported.
+    - scaling_fac: factor to adjust scaling of the pdf print (for large zones a scaling factor between >1-2 is appropriate)
+
+    """
+    # get active project
+    o_active_project = self.app.GetActiveProject()
+    o_active_project.GetContents()
+    # get networkmodel folder
+    network_model = o_active_project.GetContents("Network Model.IntPrjfolder")
+    # get write command for saving diagrams as e.g. pdf
+    comWr = self.app.GetFromStudyCase("ComWr")
+    # get the correct diagram
+    diagrams = network_model[0].GetContents("Diagrams.IntPrjfolder")
+    diagrams_contents_D2 = diagrams[0].GetContents(strng_graphic_name)
+    diagrams_contents_D2[0].Show()
+    # define save settings
+    comWr = self.app.GetFromStudyCase("ComWr")
+    comWr.SetAttribute("iopt_rd", "pdf")
+    comWr.SetAttribute("iopt_savas", 0)
+    # get scaling factor
+    scaling_fac = self._determine_scaling_for_pdf(self.substats_zone)
+    # if no substation object is given, set initial substation as default
+    if obj_substat == None:
+        obj_substat = self.inital_substat
+    # if given, define selection of the graphic according to given substation
+    if obj_substat != None:
+        str_name_site = obj_substat.GetParent().loc_name
+        # get graphical object of substation object
+        for i in obj_substat.GetParent().GetReferences():
+            if i.GetParent().loc_name == "D2":
+                graphic_obj = i
+        # get x and y coordinates of site element
+        x_coordinate = graphic_obj.rCenterX
+        y_coordinate = graphic_obj.rCenterY
+        # define subregion to export selection of graphical diagram
+        comWr.exportSubregion = 1
+        # convertion of the objects coordinates to coordinates for the grid
+        # Note: for some reason scaling with *10000 is required to set the comWr attributes correctly
+        comWr.regionTop = y_coordinate - scaling_fac * 1000
+        comWr.regionBottom = y_coordinate + scaling_fac * 1000
+        comWr.regionRight = x_coordinate + scaling_fac * 1000
+        comWr.regionLeft = x_coordinate - scaling_fac * 1000
+
+    # define path and execute pdf export
+    comWr.SetAttribute(
+        "f",
+        f"Auswertung\zone_{str_name_site}\graphics\graphic_{str_name_site}_state_index{state_indx}.pdf",
+    )
+    comWr.Execute()
