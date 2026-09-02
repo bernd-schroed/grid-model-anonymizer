@@ -85,7 +85,3 @@ class TestCSV:
                 assert orig_el == restore_el
         assert mapping_file.exists()
         utils.delete_test_data(anym_file, restore_file, mapping_file)
-
-
-def test_pick_columns():
-    """Placeholder for _pick_columns tests."""

@@ -131,7 +131,3 @@ class TestCGMES:
                 else:
                     assert orig_el == pytest.approx(restore_el)
         utils.delete_test_data(anym_file, restore_file, mapping_file)
-
-
-def test_apply_gps_pair():
-    """Placeholder for apply_gps_pair tests."""

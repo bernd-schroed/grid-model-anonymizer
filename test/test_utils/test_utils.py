@@ -1,5 +1,7 @@
 """Unit tests for utils.utils: name anonymization, hashing, UUIDs, and geo helpers."""
 
+from pathlib import Path
+
 import pytest
 
 from utils import utils
@@ -7,10 +9,10 @@ from utils import utils
 
 def test_seeded_name_anonyzer() -> None:
     """Verify SeededNameAnonymizer initializes its attributes correctly."""
-    anonymizer = utils.SeededNameAnonymizer("test_seed", "Anon_")
+    anonymizer = utils.SeededNameAnonymizer("test_seed")
     assert anonymizer.time_adding == 956552995
     assert anonymizer.seed == "test_seed"
-    assert anonymizer.prefix == "Anon_"
+    assert anonymizer.prefix == "ANON_"
     assert anonymizer.length == 10
 
 
@@ -21,12 +23,27 @@ def test_get_hash():
     assert hash_str == "5830EE3D51"
 
 
-def test_translate():
+@pytest.mark.parametrize(
+    "input_value,output_value",
+    [
+        ("", ""),
+        ("Text", "Anon_0F2B146C3A"),
+        ("Anon_stuff", "Anon_stuff"),
+    ],
+)
+def test_translate(input_value, output_value):
     """Check that translate returns the expected prefixed, hashed name."""
     # check for different inputs
     anonymizer = utils.SeededNameAnonymizer("test_seed", "Anon_")
-    translation = anonymizer.translate("Text")
-    assert translation == "Anon_0F2B146C3A"
+    translation = anonymizer.translate(input_value)
+    assert translation == output_value
+
+
+def test_translate_attr():
+    """Check that translate_attr returns the expected prefixed, hashed name."""
+    anonymizer = utils.SeededNameAnonymizer("test_seed", "Anon_")
+    translation = anonymizer.translate_attr("Text", "TexT")
+    assert translation == "Anon_1E0DAD6AD7"
 
 
 @pytest.mark.parametrize(
@@ -57,12 +74,48 @@ def test_generate_seeded_uuid():
     assert new_id == expected_id
 
 
-def test_load_mapping_json():
-    """Placeholder for load_mapping_json tests."""
+@pytest.mark.parametrize(
+    "filename, expected_result",
+    [
+        (
+            "test_mapping.json",
+            {
+                "seed": "test_seed",
+                "prefix": "ANON_",
+                "length": 10,
+                "anon_mapping": {
+                    "Test1": "ANON_E9D7DFD72C",
+                    "Attr1": "ANON_39B3EAEE0F",
+                },
+            },
+        ),
+        (
+            "faulty_mapping.json",
+            {
+                "seed": "test_seed",
+                "prefix": "ANON_",
+                "length": 10,
+                "loc_name_mapping": {
+                    "Test1": "ANON_E9D7DFD72C",
+                },
+                "attr_mappings": {"Object1": {"Attr1": "ANON_39B3EAEE0F"}},
+                "anon_mapping": {
+                    "Test1": "ANON_E9D7DFD72C",
+                    "Attr1": "ANON_39B3EAEE0F",
+                },
+            },
+        ),
+    ],
+)
+def test_load_mapping_json(filename, expected_result):
+    """Check if load_mapping_json correctly loads and parses a mapping JSON file."""
 
+    test_path = (
+        Path(__file__).parent.parent.resolve() / "test_data" / "general" / filename
+    )
 
-def test_obj_unit_from_name():
-    """Placeholder for load_mapping_json tests."""
+    data = utils.load_mapping_json(test_path)
+    assert data == expected_result
 
 
 def test_meters_to_deg_lat():
@@ -83,14 +136,6 @@ def test_meters_to_deg_lon():
     assert utils.meters_to_deg_lon(meters, lat_deg) == pytest.approx(deg_lat_89)
 
 
-def test_scale_back_to_valid_geo():
-    """Placeholder for scale_back_to_valid_geo tests."""
-
-
-def test_seed_unit():
-    """Placeholder for seed_unit tests."""
-
-
 @pytest.mark.parametrize(
     "inpt_obj,output_bool",
     [
@@ -104,3 +149,31 @@ def test_has_suffix(inpt_obj, output_bool):
 
     with pytest.raises(AttributeError):
         utils.has_suffix("This is not a file")
+
+
+@pytest.mark.parametrize(
+    "input_float, expected_output",
+    [(0.0, "0"), (1.3e-09, "1.3e-9"), (3.0e-12, "3e-12")],
+)
+def test_format_float(input_float, expected_output):
+    """Check format_float returns the expected string representation of a float."""
+    assert utils.format_float(input_float) == expected_output
+
+
+if __name__ == "__main__":
+    test_load_mapping_json(
+        "faulty_mapping.json",
+        {
+            "seed": "test_seed",
+            "prefix": "ANON_",
+            "length": 10,
+            "loc_name_mapping": {
+                "Test1": "ANON_E9D7DFD72C",
+            },
+            "attr_mappings": {"Object1": {"Attr1": "ANON_39B3EAEE0F"}},
+            "anon_mapping": {
+                "Test1": "ANON_E9D7DFD72C",
+                "Attr1": "ANON_39B3EAEE0F",
+            },
+        },
+    )

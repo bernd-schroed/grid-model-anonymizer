@@ -1,5 +1,9 @@
 """Round-trip tests for JSON anonymization and restoration."""
 
+import json
+from pathlib import Path
+from typing import List
+
 import pytest
 
 from anym import anym_json
@@ -17,7 +21,7 @@ class TestJSON:
     """Round-trip tests for JSON anonymization and restoration across category selections."""
 
     @pytest.mark.dependency(name="test_json_anym")
-    def test_json_anym(self, categories):
+    def test_json_anym(self, categories: List[str] | None):
         """Check that anonymization only changes fields in the selected categories."""
         if categories is None:
             orig_file, anym_file, _, mapping_file = utils.get_test_files(
@@ -92,3 +96,22 @@ class TestJSON:
             ):
                 assert orig_el == restore_el
         utils.delete_test_data(anym_file, restore_file, mapping_file)
+
+
+@pytest.mark.parametrize(
+    "filename", ["json_test_data", "Faulty_json_test_data", "No_Test_file"]
+)
+def test_load_json_file(filename):
+    file_path = (
+        Path(__file__).parent.resolve()
+        / "test_data"
+        / "JSON"
+        / "orig"
+        / str(filename + ".json")
+    )
+    try:
+        _ = anym_json.load_json_file(file_path=file_path)
+    except FileNotFoundError:
+        assert filename == "No_Test_file"
+    except json.JSONDecodeError:
+        assert filename == "Faulty_json_test_data"
