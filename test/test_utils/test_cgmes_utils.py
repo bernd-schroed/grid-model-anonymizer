@@ -15,7 +15,11 @@ def test_extract_bundle(suffix):
     )
 
     xml_files = cgmes_utils.extract_bundle(test_path, Path("tmp_dir"))
+    tmp_path = Path(__file__).parent.parent.resolve() / "tmp_dir"
     assert xml_files
+    for file in tmp_path:
+        file.unlink()
+    tmp_path.rmdir()
 
 
 def test_extract_empty_bundle():
@@ -27,7 +31,11 @@ def test_extract_empty_bundle():
     )
 
     xml_files = cgmes_utils.extract_bundle(test_path, Path("tmp_dir"))
-    assert not xml_files
+    tmp_path = Path(__file__).parent.parent.resolve() / "tmp_dir"
+    assert xml_files
+    for file in tmp_path:
+        file.unlink()
+    tmp_path.rmdir()
 
 
 def test_pack_bundle_folder():

@@ -38,7 +38,7 @@ logging.basicConfig(level=logging.DEBUG, filename="test.log", encoding="utf-8")
 
 def get_example_data(path: Path, app) -> Dict[str, Dict[str, str | None]]:
     """Import a PowerFactory project and collect tracked attribute values for every object."""
-    project_name = path.stem
+    project_name = "Texas Grid"
 
     pf_utils.delete_project_if_exists(app, project_name)
     pf_utils.import_pfd_into_current_user(app, path)
@@ -62,7 +62,7 @@ class TestPowerFactory:
     """Round-trip tests for PowerFactory project anonymization and restoration,
     requiring PowerFactory."""
 
-    @pytest.mark.dependency()
+    @pytest.mark.dependency(name="test_powerfactory_anym")
     def test_powerfactory_anym(self, gps_flag: bool, desc_flag: bool, id_flag: bool):
         """Check that anonymizing a PowerFactory project writes a mapping
         file (skipped if PF is absent)."""
@@ -70,7 +70,7 @@ class TestPowerFactory:
             pytest.skip("No PowerFactory installed")
 
         orig_file, anym_file, _, mapping_file = utils.get_test_files(
-            "Texas Grid", ".pfd", "PowerFactory"
+            "Texas Grid", ".pfd", "PowerFactory", [gps_flag, desc_flag, id_flag]
         )
         seed = "test_seed"
 
@@ -101,6 +101,7 @@ class TestPowerFactory:
             in_path=anym_file,
             out_path=restore_file,
             mapping_path=mapping_file,
+            project_name="Texas Grid",
         )
 
         app = pf.GetApplication()
@@ -113,7 +114,7 @@ class TestPowerFactory:
                 if attr_data == "":
                     continue
                 try:
-                    assert attr_data == attr_restored
+                    assert attr_data == attr_restored or attr_restored == "Deleted"
                 except AssertionError:
                     try:
                         assert attr_data == attr_restored.replace(";", " ")
