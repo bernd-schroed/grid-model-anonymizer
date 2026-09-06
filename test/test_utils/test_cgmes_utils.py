@@ -15,11 +15,7 @@ def test_extract_bundle(suffix):
     )
 
     xml_files = cgmes_utils.extract_bundle(test_path, Path("tmp_dir"))
-    tmp_path = Path(__file__).parent.parent.resolve() / "tmp_dir"
     assert xml_files
-    for file in tmp_path:
-        file.unlink()
-    tmp_path.rmdir()
 
 
 def test_extract_empty_bundle():
@@ -31,11 +27,7 @@ def test_extract_empty_bundle():
     )
 
     xml_files = cgmes_utils.extract_bundle(test_path, Path("tmp_dir"))
-    tmp_path = Path(__file__).parent.parent.resolve() / "tmp_dir"
-    assert xml_files
-    for file in tmp_path:
-        file.unlink()
-    tmp_path.rmdir()
+    assert not xml_files
 
 
 def test_pack_bundle_folder():
@@ -55,3 +47,10 @@ def test_pack_bundle_folder():
         if el.is_file() and el.suffix == ".xml":
             assert (output_path / el.name).exists()
             el.unlink()
+
+
+def test_closures():
+    tmp_path = Path(__file__).parent.parent.parent.resolve() / "tmp_dir"
+    for file in tmp_path.iterdir():
+        file.unlink()
+    tmp_path.rmdir()
