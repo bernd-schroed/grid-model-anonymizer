@@ -110,7 +110,7 @@ def save_json_file(data, file_path: str):
 
 
 def anonymize_json_data(
-    input_json: list,
+    input_json: list | dict,
     anonymizer: utils.SeededNameAnonymizer,
     categories: Optional[List[str]] = None,
 ):
@@ -131,29 +131,50 @@ def anonymize_json_data(
     dict or list
         The anonymized JSON object.
     """
-
-    for entry in input_json:
-        for category in categories:
-            if category in entry:
-                original_value = entry[category]
-                anonymized_value = anonymizer.translate(original_value)
-                entry[category] = anonymized_value
+    if isinstance(input_json, dict):
+        _anonymize_json_dict(input_json, anonymizer, categories)
+    elif isinstance(input_json, list):
+        _anonymize_json_list(input_json, anonymizer, categories)
 
     return input_json
 
 
-def _get_json_keys(data: dict) -> List[str]:
+def _anonymize_json_dict(input_dict, anonymizer, categories):
+    for category in categories:
+        if category in input_dict:
+            original_value = input_dict[category]
+            if isinstance(original_value, dict):
+                anonymized_value = _anonymize_json_dict(
+                    original_value, anonymizer, categories
+                )
+            else:
+                anonymized_value = anonymizer.translate(original_value)
+            input_dict[category] = anonymized_value
+    return input_dict
+
+
+def _anonymize_json_list(input_list, anonymizer, categories):
+    for entry in input_list:
+        entry = _anonymize_json_dict(entry, anonymizer, categories)
+    return input_list
+
+
+def _get_json_keys(data: list | dict) -> List[str]:
     all_keys = set()
+    if isinstance(data, list):
+        # Über alle Einträge in der Liste iterieren
+        for entry in data:
+            if isinstance(
+                entry, dict
+            ):  # Sicherstellen, dass es sich um ein Dictionary handelt
+                all_keys.update(entry.keys())
 
-    # Über alle Einträge in der Liste iterieren
-    for entry in data:
-        if isinstance(
-            entry, dict
-        ):  # Sicherstellen, dass es sich um ein Dictionary handelt
-            all_keys.update(entry.keys())
+    elif isinstance(data, dict):
+        all_keys.update(data.keys())
 
-        # Das Set in eine sortierte Liste umwandeln (für bessere Lesbarkeit)
-        unique_keys_list = sorted(list(all_keys))
+    # Das Set in eine sortierte Liste umwandeln (für bessere Lesbarkeit)
+    unique_keys_list = sorted(list(all_keys))
+
     return unique_keys_list
 
 
