@@ -2,11 +2,13 @@
 
 import itertools
 import logging
+import sys
 from pathlib import Path
 from typing import Dict
 
 import pytest
 
+sys.path.append(".")
 from anym import anym_pf
 from restore import restore_pf
 from utils import pf_utils, utils
@@ -123,78 +125,154 @@ class TestPowerFactory:
 
 
 @pytest.mark.parametrize("graphic_name", ["Add_name_here"])
-def test_load_flow_results(graphic_name):
+def test_powerfactory_load_flow_accuracy(path):
     """Check that load_flow_results correctly loads and parses a flow results graphic file."""
+    # SetCluster.CalcCluster
+    # ComLdf Execute
     if pf_utils.get_pf_version() is False:
         pytest.skip("No PowerFactory installed")
+    orig_path, anym_path, _, mapping_path = utils.get_test_files(
+        path, ".pfd", "PowerFactory", []
+    )
 
-    test_path = (
-        Path(__file__).parent.parent.resolve() / "test_data" / "general" / graphic_name
+    seed = "test_seed"
+
+    anym_pf.run_powerfactory_import_export(
+        in_path=orig_path,
+        out_path=anym_path,
+        random_seed=seed,
+        mapping_out_path=mapping_path,
+        desc=False,
+        gps=False,
+        remap_ids=False,
     )
 
     app = pf.GetApplication()
-    pf_utils.delete_project_if_exists(app, graphic_name)
-    pf_utils.import_pfd_into_current_user(app, test_path)
-    pf_utils.activate_project(app, graphic_name)
-
-    results = pf_utils.load_flow_results(app, graphic_name)
-    assert results is not None
+    orig_ldf = get_load_flow_results(app, orig_path)
+    anym_ldf = get_load_flow_results(app, anym_path)
+    # orig_results = orig_ldf.GetContents()
+    # anym_results = anym_ldf.GetContents()
 
 
-def print_snapshot_of_grid(
-    strng_graphic_name, obj_substat=None, state_indx: int = 0, scaling_fac=1
-):
-    """
-    Takes a snapshot of the current switching state and exports it as pdf file.
+def get_load_flow_results(app, path):
+    project_name = path.stem
 
-    Input:
-    - strng_graphic_name: string name of the graphic that is to be exported including the graphic ending ".IntGrfnet" (e.g. "D2.IntGrfnet")
-    - obj_substat: pf object of the substation, if not given, the entire diagram is exported.
-    - scaling_fac: factor to adjust scaling of the pdf print (for large zones a scaling factor between >1-2 is appropriate)
+    pf_utils.delete_project_if_exists(app, project_name)
+    pf_utils.import_pfd_into_current_user(app, path)
+    pf_utils.activate_project(app, project_name)
 
-    """
-    # get active project
-    o_active_project = self.app.GetActiveProject()
-    o_active_project.GetContents()
-    # get networkmodel folder
-    network_model = o_active_project.GetContents("Network Model.IntPrjfolder")
-    # get write command for saving diagrams as e.g. pdf
-    comWr = self.app.GetFromStudyCase("ComWr")
-    # get the correct diagram
-    diagrams = network_model[0].GetContents("Diagrams.IntPrjfolder")
-    diagrams_contents_D2 = diagrams[0].GetContents(strng_graphic_name)
-    diagrams_contents_D2[0].Show()
-    # define save settings
-    comWr = self.app.GetFromStudyCase("ComWr")
-    comWr.SetAttribute("iopt_rd", "pdf")
-    comWr.SetAttribute("iopt_savas", 0)
-    # get scaling factor
-    scaling_fac = self._determine_scaling_for_pdf(self.substats_zone)
-    # if no substation object is given, set initial substation as default
-    if obj_substat == None:
-        obj_substat = self.inital_substat
-    # if given, define selection of the graphic according to given substation
-    if obj_substat != None:
-        str_name_site = obj_substat.GetParent().loc_name
-        # get graphical object of substation object
-        for i in obj_substat.GetParent().GetReferences():
-            if i.GetParent().loc_name == "D2":
-                graphic_obj = i
-        # get x and y coordinates of site element
-        x_coordinate = graphic_obj.rCenterX
-        y_coordinate = graphic_obj.rCenterY
-        # define subregion to export selection of graphical diagram
-        comWr.exportSubregion = 1
-        # convertion of the objects coordinates to coordinates for the grid
-        # Note: for some reason scaling with *10000 is required to set the comWr attributes correctly
-        comWr.regionTop = y_coordinate - scaling_fac * 1000
-        comWr.regionBottom = y_coordinate + scaling_fac * 1000
-        comWr.regionRight = x_coordinate + scaling_fac * 1000
-        comWr.regionLeft = x_coordinate - scaling_fac * 1000
+    # get load flow object and execute
+    oLoadflow = app.GetFromStudyCase("ComLdf")  # get load flow object
+    oLoadflow.Execute()  # execute load flow
 
-    # define path and execute pdf export
-    comWr.SetAttribute(
-        "f",
-        f"Auswertung\zone_{str_name_site}\graphics\graphic_{str_name_site}_state_index{state_indx}.pdf",
-    )
-    comWr.Execute()
+    # get the generators and their active/reactive power and loading
+    Generators = app.GetCalcRelevantObjects("*.ElmSym")
+    for gen in Generators:  # loop through list
+        name = getattr(gen, "loc_name")  # get name of the generator
+        try:
+            actPower = getattr(gen, "c:p")  # get active power
+            reacPower = getattr(gen, "c:q")  # get reactive power
+            genloading = getattr(gen, "c:loading")  # get loading
+            # print results
+            print(
+                "%s: P = %.2f MW, Q = %.2f MVAr, loading = %.0f percent"
+                % (name, actPower, reacPower, genloading)
+            )
+        except AttributeError:
+            print("%s: Generator Power and Loading unknown" % (name))
+
+    print("-----------------------------------------")
+
+    # get the lines and print their loading
+
+    Lines = app.GetCalcRelevantObjects("*.ElmLne")
+    for line in Lines:  # loop through list
+        name = getattr(line, "loc_name")  # get name of the line
+        try:
+            value = getattr(line, "c:loading")  # get value for the loading
+            # print results
+            print("Loading of the line: %s = %.2f percent" % (name, value))
+        except AttributeError:
+            print("%s: Line Loading unknown" % name)
+    print("-----------------------------------------")
+
+    # get the buses and print their voltage
+    Buses = app.GetCalcRelevantObjects("*.ElmTerm")
+    for bus in Buses:  # loop through list
+
+        name = getattr(bus, "loc_name")  # get name of the bus
+        try:
+            amp = getattr(bus, "m:u1")  # get voltage magnitude
+            phase = getattr(bus, "m:phiu")  # get voltage angle
+            # print results
+            print("Voltage at %s = %.2f pu %.2f deg" % (name, amp, phase))
+        except AttributeError:
+            print("%s: Bus Voltage unknown" % name)
+    return "It Worked"
+
+
+# def print_snapshot_of_grid(
+#     strng_graphic_name, obj_substat=None, state_indx: int = 0, scaling_fac=1
+# ):
+#     """
+#     Takes a snapshot of the current switching state and exports it as pdf file.
+
+#     Input:
+#     - strng_graphic_name: string name of the graphic that is to be exported including the graphic ending ".IntGrfnet" (e.g. "D2.IntGrfnet")
+#     - obj_substat: pf object of the substation, if not given, the entire diagram is exported.
+#     - scaling_fac: factor to adjust scaling of the pdf print (for large zones a scaling factor between >1-2 is appropriate)
+
+#     """
+#     # get active project
+#     o_active_project = self.app.GetActiveProject()
+#     o_active_project.GetContents()
+#     # get networkmodel folder
+#     network_model = o_active_project.GetContents("Network Model.IntPrjfolder")
+#     # get write command for saving diagrams as e.g. pdf
+#     comWr = self.app.GetFromStudyCase("ComWr")
+#     # get the correct diagram
+#     diagrams = network_model[0].GetContents("Diagrams.IntPrjfolder")
+#     diagrams_contents_D2 = diagrams[0].GetContents(strng_graphic_name)
+#     diagrams_contents_D2[0].Show()
+#     # define save settings
+#     comWr = self.app.GetFromStudyCase("ComWr")
+#     comWr.SetAttribute("iopt_rd", "pdf")
+#     comWr.SetAttribute("iopt_savas", 0)
+#     # get scaling factor
+#     scaling_fac = self._determine_scaling_for_pdf(self.substats_zone)
+#     # if no substation object is given, set initial substation as default
+#     if obj_substat == None:
+#         obj_substat = self.inital_substat
+#     # if given, define selection of the graphic according to given substation
+#     if obj_substat != None:
+#         str_name_site = obj_substat.GetParent().loc_name
+#         # get graphical object of substation object
+#         for i in obj_substat.GetParent().GetReferences():
+#             if i.GetParent().loc_name == "D2":
+#                 graphic_obj = i
+#         # get x and y coordinates of site element
+#         x_coordinate = graphic_obj.rCenterX
+#         y_coordinate = graphic_obj.rCenterY
+#         # define subregion to export selection of graphical diagram
+#         comWr.exportSubregion = 1
+#         # convertion of the objects coordinates to coordinates for the grid
+#         # Note: for some reason scaling with *10000 is required to set the comWr attributes correctly
+#         comWr.regionTop = y_coordinate - scaling_fac * 1000
+#         comWr.regionBottom = y_coordinate + scaling_fac * 1000
+#         comWr.regionRight = x_coordinate + scaling_fac * 1000
+#         comWr.regionLeft = x_coordinate - scaling_fac * 1000
+
+#     # define path and execute pdf export
+#     comWr.SetAttribute(
+#         "f",
+#         f"Auswertung\zone_{str_name_site}\graphics\graphic_{str_name_site}_state_index{state_indx}.pdf",
+#     )
+#     comWr.Execute()
+
+
+if __name__ == "__main__":
+    project_dir = Path(__file__).parent.parent.resolve()
+    test_dir = Path(project_dir, "test")
+    data_dir = Path(test_dir, "test_data", "PowerFactory")
+    the_file = Path(data_dir, "orig", "Nine-bus System.pfd")
+    test_powerfactory_load_flow_accuracy("Nine-bus System")
