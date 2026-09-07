@@ -132,30 +132,33 @@ def anonymize_json_data(
         The anonymized JSON object.
     """
     if isinstance(input_json, dict):
-        _anonymize_json_dict(input_json, anonymizer, categories)
+        input_json = _anonymize_json_dict(input_json, anonymizer, categories)
     elif isinstance(input_json, list):
-        _anonymize_json_list(input_json, anonymizer, categories)
+        input_json = _anonymize_json_list(input_json, anonymizer, categories)
 
     return input_json
 
 
-def _anonymize_json_dict(input_dict, anonymizer, categories):
-    for category in categories:
-        if category in input_dict:
-            original_value = input_dict[category]
-            if isinstance(original_value, dict):
-                anonymized_value = _anonymize_json_dict(
-                    original_value, anonymizer, categories
-                )
-            else:
-                anonymized_value = anonymizer.translate(original_value)
-            input_dict[category] = anonymized_value
+def _anonymize_json_dict(input_dict: dict, anonymizer, categories):
+    for key, element in input_dict.items():
+        if isinstance(element, dict):
+            anonymized_value = _anonymize_json_dict(element, anonymizer, categories)
+        elif isinstance(element, list):
+            anonymized_value = _anonymize_json_list(element, anonymizer, categories)
+        elif key in categories:
+            anonymized_value = anonymizer.translate(element)
+        else:
+            anonymized_value = element
+        input_dict[key] = anonymized_value
     return input_dict
 
 
 def _anonymize_json_list(input_list, anonymizer, categories):
     for entry in input_list:
-        entry = _anonymize_json_dict(entry, anonymizer, categories)
+        if isinstance(entry, dict):
+            entry = _anonymize_json_dict(entry, anonymizer, categories)
+        elif isinstance(entry, list):
+            entry = _anonymize_json_list(entry, anonymizer, categories)
     return input_list
 
 
@@ -264,13 +267,35 @@ def restore_json_anonymization(
         prefix,
     ) = utils.get_mappings(mapping_input)
 
-    for element in data:
-        if isinstance(element, dict):
-            for key, value in element.items():
-                if isinstance(value, str) and value.startswith(prefix):
-                    original_value = anon_rev.get(value)
-                    if original_value:
-                        element[key] = original_value
+    if isinstance(data, dict):
+        data = _restore_json_dict(data, anon_rev, prefix)
+    elif isinstance(data, list):
+        data = _restore_json_list(data, anon_rev, prefix)
+
     save_json_file(data, output_json)
 
     logger.info("Restoration finished!")
+
+
+def _restore_json_list(data, anon_rev, prefix):
+    for entry in data:
+        if isinstance(entry, dict):
+            entry = _restore_json_dict(entry, anon_rev, prefix)
+        elif isinstance(entry, list):
+            entry = _restore_json_list(entry, anon_rev, prefix)
+    return data
+
+
+def _restore_json_dict(data, anon_rev, prefix):
+    for key, value in data.items():
+        if isinstance(value, dict):
+            value = _restore_json_dict(value, anon_rev, prefix)
+            continue
+        if isinstance(value, list):
+            value = _restore_json_list(value, anon_rev, prefix)
+            continue
+        if isinstance(value, str) and value.startswith(prefix):
+            original_value = anon_rev.get(value)
+            if original_value:
+                data[key] = original_value
+    return data
