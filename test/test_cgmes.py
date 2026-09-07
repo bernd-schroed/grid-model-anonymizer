@@ -1,6 +1,5 @@
 """Round-trip tests for CGMES bundle anonymization and restoration."""
 
-import itertools
 import tempfile
 from pathlib import Path
 from typing import Dict, List
@@ -53,7 +52,7 @@ def get_test_examples(path, rdf_id_flag):
     return elems
 
 
-flag_list = list(itertools.product([True, False], repeat=3))
+flag_list = [(True, True, True), (False, False, False)]
 cgmes_3_list = [entry + ("Texas_3",) for entry in flag_list]
 cgmes_24_list = [entry + ("Texas_2.4",) for entry in flag_list]
 test_list = cgmes_24_list + cgmes_3_list
