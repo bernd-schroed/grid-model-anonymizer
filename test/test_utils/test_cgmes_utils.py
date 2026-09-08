@@ -1,3 +1,5 @@
+"""Unit tests for utils.cgems_utils: name anonymization, hashing, UUIDs, and geo helpers."""
+
 from pathlib import Path
 
 import pytest
@@ -7,6 +9,7 @@ from utils import cgmes_utils
 
 @pytest.mark.parametrize("suffix", [".zip", ".xml", ""])
 def test_extract_bundle(suffix):
+    """Check that extract bundle gets xml files without error"""
     test_path = (
         Path(__file__).parent.parent.resolve()
         / "test_data"
@@ -19,6 +22,8 @@ def test_extract_bundle(suffix):
 
 
 def test_extract_empty_bundle():
+    """Check that extract bundle returns an empty list when given an empty
+    bundle"""
     test_path = (
         Path(__file__).parent.parent.resolve()
         / "test_data"
@@ -31,6 +36,7 @@ def test_extract_empty_bundle():
 
 
 def test_pack_bundle_folder():
+    """Check that pack_bundle creates a proper bundle, without error"""
     test_path = (
         Path(__file__).parent.parent.resolve() / "test_data" / "general" / "xml_test"
     )
@@ -47,3 +53,11 @@ def test_pack_bundle_folder():
         if el.is_file() and el.suffix == ".xml":
             assert (output_path / el.name).exists()
             el.unlink()
+
+
+def test_closures():
+    """Some final closure to delete tmp_files"""
+    tmp_path = Path(__file__).parent.parent.parent.resolve() / "tmp_dir"
+    for file in tmp_path.iterdir():
+        file.unlink()
+    tmp_path.rmdir()

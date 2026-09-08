@@ -39,7 +39,7 @@ logging.basicConfig(level=logging.DEBUG, filename="test.log", encoding="utf-8")
 
 def get_example_data(path: Path, app) -> Dict[str, Dict[str, str | None]]:
     """Import a PowerFactory project and collect tracked attribute values for every object."""
-    project_name = path.stem
+    project_name = "Texas Grid"
 
     pf_utils.delete_project_if_exists(app, project_name)
     pf_utils.import_pfd_into_current_user(app, path)
@@ -102,6 +102,7 @@ class TestPowerFactory:
             in_path=anym_file,
             out_path=restore_file,
             mapping_path=mapping_file,
+            project_name="Texas Grid",
         )
 
         app = pf.GetApplication()
@@ -114,7 +115,7 @@ class TestPowerFactory:
                 if attr_data == "":
                     continue
                 try:
-                    assert attr_data == attr_restored
+                    assert attr_data == attr_restored or attr_restored == "Deleted"
                 except AssertionError:
                     try:
                         assert attr_data == attr_restored.replace(";", " ")

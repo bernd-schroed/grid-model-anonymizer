@@ -522,6 +522,7 @@ def run_powerfactory_restore(
     in_path: Path,
     out_path: Path,
     mapping_path: Path,
+    project_name: str = None,
 ):
     """
     Import PFD -> restore from JSON -> export PFD
@@ -547,7 +548,8 @@ def run_powerfactory_restore(
     if not mapping_path.exists():
         raise FileNotFoundError(mapping_path)
 
-    project_name = in_path.stem
+    if project_name is None:
+        project_name = in_path.stem
 
     pf_utils.delete_project_if_exists(app, project_name)
     pf_utils.import_pfd_into_current_user(app, in_path)
