@@ -120,7 +120,7 @@ class TestPowerFactory:
                         assert attr_data == attr_restored.replace(";", " ")
                     except AssertionError:
                         assert attr_data == attr_restored + " "
-        utils.delete_test_data(anym_file, restore_file, mapping_file)
+        utils.delete_test_data([anym_file, restore_file, mapping_file])
 
 
 @pytest.mark.parametrize(
@@ -178,6 +178,7 @@ def test_powerfactory_load_flow_accuracy(path):
     load_flow_asserts(
         orig_data=orig_ldf_results["busses"], anym_data=anym_ldf_results["busses"]
     )
+    utils.delete_test_data([anym_path, mapping_path])
 
 
 def load_flow_asserts(orig_data, anym_data):

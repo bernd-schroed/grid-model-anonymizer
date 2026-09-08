@@ -95,7 +95,7 @@ class TestJSON:
                 orig_data_point.values(), restore_data_point.values()
             ):
                 assert orig_el == restore_el
-        utils.delete_test_data(anym_file, restore_file, mapping_file)
+        utils.delete_test_data([anym_file, restore_file, mapping_file])
 
 
 @pytest.mark.parametrize(

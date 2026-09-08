@@ -572,7 +572,7 @@ def get_test_files(
     return orig_file, anym_file, restore_file, mapping_file
 
 
-def delete_test_data(anym_file: Path, restore_file: Path, mapping_file: Path):
+def delete_test_data(file_list: List[Path]):
     """
     Delete the anonymized, restored, and mapping files produced by a test run.
 
@@ -585,6 +585,5 @@ def delete_test_data(anym_file: Path, restore_file: Path, mapping_file: Path):
     mapping_file : Path
         Path to the mapping JSON file to remove.
     """
-    anym_file.unlink()
-    restore_file.unlink()
-    mapping_file.unlink()
+    for file in file_list:
+        file.unlink()

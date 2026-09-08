@@ -84,4 +84,4 @@ class TestCSV:
             for orig_el, restore_el in zip(orig_type, restore_type):
                 assert orig_el == restore_el
         assert mapping_file.exists()
-        utils.delete_test_data(anym_file, restore_file, mapping_file)
+        utils.delete_test_data([anym_file, restore_file, mapping_file])

@@ -129,4 +129,4 @@ class TestCGMES:
                     assert orig_el == pytest.approx(utils.format_float(restore_el))
                 else:
                     assert orig_el == pytest.approx(restore_el)
-        utils.delete_test_data(anym_file, restore_file, mapping_file)
+        utils.delete_test_data([anym_file, restore_file, mapping_file])
