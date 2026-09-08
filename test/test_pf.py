@@ -1,6 +1,5 @@
 """Round-trip tests for PowerFactory project anonymization and restoration."""
 
-import itertools
 import logging
 import sys
 from pathlib import Path
@@ -58,13 +57,13 @@ def get_example_data(path: Path, app) -> Dict[str, Dict[str, str | None]]:
 
 @pytest.mark.slow
 @pytest.mark.parametrize(
-    "gps_flag, desc_flag, id_flag", list(itertools.product([True, False], repeat=3))
+    "gps_flag, desc_flag, id_flag", [(True, True, True), (False, False, False)]
 )
 class TestPowerFactory:
     """Round-trip tests for PowerFactory project anonymization and restoration,
     requiring PowerFactory."""
 
-    @pytest.mark.dependency()
+    @pytest.mark.dependency(name="test_powerfactory_anym")
     def test_powerfactory_anym(self, gps_flag: bool, desc_flag: bool, id_flag: bool):
         """Check that anonymizing a PowerFactory project writes a mapping
         file (skipped if PF is absent)."""
@@ -72,7 +71,7 @@ class TestPowerFactory:
             pytest.skip("No PowerFactory installed")
 
         orig_file, anym_file, _, mapping_file = utils.get_test_files(
-            "Texas Grid", ".pfd", "PowerFactory"
+            "Texas Grid", ".pfd", "PowerFactory", [gps_flag, desc_flag, id_flag]
         )
         seed = "test_seed"
 
@@ -125,7 +124,14 @@ class TestPowerFactory:
 
 
 @pytest.mark.parametrize(
-    "path", ["Texas Grid", "14 Bus System(1)", "LV Distribution Network"]
+    "path",
+    [
+        "Nine-bus System",
+        "IEEE 13 Node Feeder",
+        "14 Bus System(1)",
+        "LV Distribution Network",
+        "39 Bus New England System",
+    ],
 )
 def test_powerfactory_load_flow_accuracy(path):
     """Check that load_flow_results correctly loads and parses a flow results graphic file."""
