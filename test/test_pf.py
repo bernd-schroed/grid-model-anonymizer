@@ -167,7 +167,7 @@ def test_powerfactory_load_flow_accuracy(path):
     app = pf.GetApplication()
     orig_ldf_results = get_load_flow_results(app, orig_path, anon_rev, prefix)
     anym_ldf_results = get_load_flow_results(app, anym_path, anon_rev, prefix)
-    # print(orig_ldf)
+
     load_flow_asserts(
         orig_data=orig_ldf_results["generators"],
         anym_data=anym_ldf_results["generators"],
@@ -206,9 +206,11 @@ def get_load_flow_results(app, path, anon_rev, prefix):
     oLoadflow = app.GetFromStudyCase("ComLdf")  # get load flow object
     oLoadflow.Execute()  # execute load flow
     load_flow_results = {"generators": [], "lines": [], "busses": []}
+
     # get the generators and their active/reactive power and loading
     Generators = app.GetCalcRelevantObjects("*.ElmSym")
     gen_dict: Dict[str, float] = {}
+
     for gen in Generators:  # loop through list
         name = getattr(gen, "loc_name")  # get name of the generator
 
@@ -221,25 +223,21 @@ def get_load_flow_results(app, path, anon_rev, prefix):
             actPower = getattr(gen, "c:p")  # get active power
             reacPower = getattr(gen, "c:q")  # get reactive power
             genloading = getattr(gen, "c:loading")  # get loading
-            # print results
-            print(
-                "%s: P = %.2f MW, Q = %.2f MVAr, loading = %.0f percent"
-                % (orig_name, actPower, reacPower, genloading)
-            )
             gen_entry = {"P": actPower, "Q": reacPower, "loading": genloading}
 
         except AttributeError:
-            print("%s: Generator Power and Loading unknown" % (orig_name))
             gen_entry = "Unknown"
+
         gen_dict[orig_name] = gen_entry
+
     load_flow_results["generators"] = gen_dict
-    print("-----------------------------------------")
 
     # get the lines and print their loading
     Lines = app.GetCalcRelevantObjects("*.ElmLne")
     line_dict = {}
     for line in Lines:  # loop through list
         name = getattr(line, "loc_name")  # get name of the line
+
         if name.startswith(prefix):
             orig_name = anon_rev[name]
         else:
@@ -247,33 +245,32 @@ def get_load_flow_results(app, path, anon_rev, prefix):
 
         try:
             value = getattr(line, "c:loading")  # get value for the loading
-            # print results
-            print("Loading of the line: %s = %.2f percent" % (orig_name, value))
             line_entry = {"loading": value}
+
         except AttributeError:
-            print("%s: Line Loading unknown" % orig_name)
             line_entry = "Unknown"
+
         line_dict[orig_name] = line_entry
     load_flow_results["lines"] = line_dict
-    print("-----------------------------------------")
 
     # get the buses and print their voltage
     Buses = app.GetCalcRelevantObjects("*.ElmTerm")
     bus_dict = {}
     for bus in Buses:  # loop through list
+
         if name.startswith(prefix):
             orig_name = anon_rev[name]
         else:
             orig_name = name
+
         name = getattr(bus, "loc_name")  # get name of the bus
+
         try:
             amp = getattr(bus, "m:u1")  # get voltage magnitude
             phase = getattr(bus, "m:phiu")  # get voltage angle
-            # print results
-            print("Voltage at %s = %.2f pu %.2f deg" % (orig_name, amp, phase))
             bus_entry = {"u": amp, "deg": phase}
+
         except AttributeError:
-            print("%s: Bus Voltage unknown" % orig_name)
             bus_entry = "Unknown"
             bus_dict[orig_name] = bus_entry
 
