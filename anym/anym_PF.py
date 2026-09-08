@@ -348,23 +348,26 @@ def set_line_length(obj: object, anonymizer: utils.SeededNameAnonymizer) -> None
     # create the new line type from old one
     ln_type = obj.GetType()
     ln_name = pf_utils.get_loc_name(ln_type)
-    new_type = create_new_line_type(ln_type, new_name)
+    try:
+        new_type = create_new_line_type(ln_type, new_name)
 
-    # reset the impedance, since the new line length is always 1 km the ratio = old length
-    impedance_ratio = old_len / 1
-    set_impedances(ln_type, new_type, impedance_ratio, anonymizer, ln_name)
+        # reset the impedance, since the new line length is always 1 km the ratio = old length
+        impedance_ratio = old_len / 1
+        set_impedances(ln_type, new_type, impedance_ratio, anonymizer, ln_name)
 
-    # save the new line in the anonymizer
-    anonymizer.line_mapping.setdefault(
-        new_name,
-        {
-            "name": ln_name,
-            "length": old_len,
-        },
-    )
-    # reset the line data
-    pf_utils.safe_set(obj, "dline", float(1), verbose=False)
-    pf_utils.safe_set(obj, "typ_id", new_type, verbose=False)
+        # save the new line in the anonymizer
+        anonymizer.line_mapping.setdefault(
+            new_name,
+            {
+                "name": ln_name,
+                "length": old_len,
+            },
+        )
+        # reset the line data
+        pf_utils.safe_set(obj, "dline", float(1), verbose=False)
+        pf_utils.safe_set(obj, "typ_id", new_type, verbose=False)
+    except AttributeError as e:
+        raise AttributeError from e
 
 
 def create_new_line_type(old_type, new_name: str):
@@ -383,8 +386,11 @@ def create_new_line_type(old_type, new_name: str):
     new_type : line type object
         The new line type
     """
-    parent = old_type.GetParent()
-    new_type = parent.AddCopy(old_type, new_name)
+    try:
+        parent = old_type.GetParent()
+        new_type = parent.AddCopy(old_type, new_name)
+    except AttributeError as e:
+        raise AttributeError from e
     return new_type
 
 
@@ -557,8 +563,12 @@ def anonymize_objects(
                 orig_cim_id=orig_cim,
                 orig_loc_name_for_jitter=orig_loc,
             )
-
-            set_line_length(obj, anonymizer=anonymizer)
+        for obj in objects:
+            try:
+                set_line_length(obj, anonymizer=anonymizer)
+            except AttributeError:
+                logger.warning("No Line Setting possible! Impedance Alteration skipped")
+                break
     finally:
         pf_utils.pf_bulk_mode_end(app)
 

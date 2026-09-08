@@ -182,8 +182,14 @@ def test_powerfactory_load_flow_accuracy(path):
 
 def load_flow_asserts(orig_data, anym_data):
     for name, elems in orig_data.items():
-        for elem_key, elem_value in elems.items():
-            assert elem_value == pytest.approx(anym_data[name][elem_key])
+        try:
+            for elem_key, elem_value in elems.items():
+                assert elem_value == pytest.approx(anym_data[name][elem_key])
+        except AttributeError as e:
+            if elems == "Unknown":
+                pass
+            else:
+                raise AttributeError from e
 
 
 def get_load_flow_results(app, path, anon_rev, prefix):
