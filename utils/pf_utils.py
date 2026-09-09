@@ -970,3 +970,90 @@ def kill_powerfactory():
                 return
         except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
             pass
+
+
+def get_load_flow_results(
+    app, path: Path, anon_rev: dict, prefix: str, project_name: str = None
+) -> dict[str, dict]:
+    """Main Parts are taken from
+    https://thesmartinsights.com/run-digsilent-powerfactory-via-the-python-api-jump-start-to-your-powerfactory-automatization/
+    and adapted for this use case"""
+    if project_name is None:
+        project_name = path.stem
+
+    delete_project_if_exists(app, project_name)
+    import_pfd_into_current_user(app, path)
+    activate_project(app, project_name)
+
+    # get load flow object and execute
+    ldf_object = app.GetFromStudyCase("ComLdf")  # get load flow object
+    ldf_object.Execute()  # execute load flow
+    load_flow_results = {"generators": [], "lines": [], "busses": []}
+
+    # get the generators and their active/reactive power and loading
+    generators = app.GetCalcRelevantObjects("*.ElmSym")
+    gen_dict: Dict[str, float] = {}
+
+    for gen in generators:  # loop through list
+        name = getattr(gen, "loc_name")  # get name of the generator
+
+        if name.startswith(prefix):
+            orig_name = anon_rev[name]
+        else:
+            orig_name = name
+
+        try:
+            genloading = getattr(gen, "c:loading")  # get loading
+            gen_entry = {"loading": genloading}
+
+        except AttributeError:
+            gen_entry = "Unknown"
+
+        gen_dict[orig_name] = gen_entry
+
+    load_flow_results["generators"] = gen_dict
+
+    # get the lines and print their loading
+    lines = app.GetCalcRelevantObjects("*.ElmLne")
+    line_dict = {}
+    for line in lines:  # loop through list
+        name = getattr(line, "loc_name")  # get name of the line
+
+        if name.startswith(prefix):
+            orig_name = anon_rev[name]
+        else:
+            orig_name = name
+
+        try:
+            value = getattr(line, "c:loading")  # get value for the loading
+            line_entry = {"loading": value}
+
+        except AttributeError:
+            line_entry = "Unknown"
+
+        line_dict[orig_name] = line_entry
+    load_flow_results["lines"] = line_dict
+
+    # get the buses and print their voltage
+    buses = app.GetCalcRelevantObjects("*.ElmTerm")
+    bus_dict = {}
+    for bus in buses:  # loop through list
+
+        if name.startswith(prefix):
+            orig_name = anon_rev[name]
+        else:
+            orig_name = name
+
+        name = getattr(bus, "loc_name")  # get name of the bus
+
+        try:
+            amp = getattr(bus, "m:u1")  # get voltage magnitude
+            phase = getattr(bus, "m:phiu")  # get voltage angle
+            bus_entry = {"u": amp, "deg": phase}
+
+        except AttributeError:
+            bus_entry = "Unknown"
+            bus_dict[orig_name] = bus_entry
+
+    load_flow_results["busses"] = bus_dict
+    return load_flow_results

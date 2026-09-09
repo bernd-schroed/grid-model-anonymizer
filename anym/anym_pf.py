@@ -315,7 +315,7 @@ def set_impedances(
             tag=f"impedance_alteration_{impedance_type}_{ln_name}",
         )
         alteration_factor = (
-            1.0 + (alteration_seed - 0.5) * anonymizer.alteration_factor / 100
+            1.0 + (alteration_seed - 0.5) * 2 * anonymizer.alteration_factor / 100
         )
 
         new_impedance_per_km = impedance_value_per_km * ratio * alteration_factor
@@ -685,3 +685,42 @@ def run_powerfactory_import_export(
         logger.warning("Export not executed: %s", e)
     except RuntimeError as e:
         logger.error("Export failed: %s", e)
+
+    check_load_flow_accuracy(in_path, out_path, mapping_out_path)
+
+
+def check_load_flow_accuracy(orig_path: Path, anym_path: Path, mapping_out_path: Path):
+    (
+        _,
+        anon_rev,
+        _,
+        _,
+        _,
+        _,
+        prefix,
+    ) = utils.get_mappings(mapping_out_path)
+
+    app = pf.GetApplication()
+    orig_ldf_results = pf_utils.get_load_flow_results(app, orig_path, anon_rev, prefix)
+    anym_ldf_results = pf_utils.get_load_flow_results(
+        app, anym_path, anon_rev, prefix, project_name=orig_path.stem
+    )
+
+    difference_list = []
+    for type_key, type_entry in orig_ldf_results.items():
+        for elem_key, elem_entry in type_entry.items():
+
+            for value_key, orig_value_entry in elem_entry.items():
+                anym_value_entry = anym_ldf_results[type_key][elem_key][value_key]
+                try:
+                    rel_error = (orig_value_entry - anym_value_entry) / orig_value_entry
+                except ZeroDivisionError:
+                    rel_error = orig_value_entry - anym_value_entry
+                difference_list.append(rel_error)
+
+    mean_square_error = sum(x**2 for x in difference_list) / len(difference_list)
+    rmse = math.sqrt(mean_square_error)
+    if rmse >= 1 / 100:
+        logger.warning(
+            "The averaged error for load flow analysis is larger than 1%! Use a smaller alteration factor to reduce the error"
+        )
