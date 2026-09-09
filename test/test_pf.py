@@ -197,7 +197,8 @@ def load_flow_asserts(orig_data, anym_data):
 
 
 def get_load_flow_results(app, path, anon_rev, prefix):
-    """Main Parts are taken from https://thesmartinsights.com/run-digsilent-powerfactory-via-the-python-api-jump-start-to-your-powerfactory-automatization/
+    """Main Parts are taken from
+    https://thesmartinsights.com/run-digsilent-powerfactory-via-the-python-api-jump-start-to-your-powerfactory-automatization/
     and adapted for this use case"""
     project_name = path.stem
 
@@ -206,15 +207,15 @@ def get_load_flow_results(app, path, anon_rev, prefix):
     pf_utils.activate_project(app, project_name)
 
     # get load flow object and execute
-    oLoadflow = app.GetFromStudyCase("ComLdf")  # get load flow object
-    oLoadflow.Execute()  # execute load flow
+    ldf_object = app.GetFromStudyCase("ComLdf")  # get load flow object
+    ldf_object.Execute()  # execute load flow
     load_flow_results = {"generators": [], "lines": [], "busses": []}
 
     # get the generators and their active/reactive power and loading
-    Generators = app.GetCalcRelevantObjects("*.ElmSym")
+    generators = app.GetCalcRelevantObjects("*.ElmSym")
     gen_dict: Dict[str, float] = {}
 
-    for gen in Generators:  # loop through list
+    for gen in generators:  # loop through list
         name = getattr(gen, "loc_name")  # get name of the generator
 
         if name.startswith(prefix):
@@ -223,10 +224,10 @@ def get_load_flow_results(app, path, anon_rev, prefix):
             orig_name = name
 
         try:
-            actPower = getattr(gen, "c:p")  # get active power
-            reacPower = getattr(gen, "c:q")  # get reactive power
+            active_power = getattr(gen, "c:p")  # get active power
+            reactive_power = getattr(gen, "c:q")  # get reactive power
             genloading = getattr(gen, "c:loading")  # get loading
-            gen_entry = {"P": actPower, "Q": reacPower, "loading": genloading}
+            gen_entry = {"P": active_power, "Q": reactive_power, "loading": genloading}
 
         except AttributeError:
             gen_entry = "Unknown"
@@ -236,9 +237,9 @@ def get_load_flow_results(app, path, anon_rev, prefix):
     load_flow_results["generators"] = gen_dict
 
     # get the lines and print their loading
-    Lines = app.GetCalcRelevantObjects("*.ElmLne")
+    lines = app.GetCalcRelevantObjects("*.ElmLne")
     line_dict = {}
-    for line in Lines:  # loop through list
+    for line in lines:  # loop through list
         name = getattr(line, "loc_name")  # get name of the line
 
         if name.startswith(prefix):
@@ -257,9 +258,9 @@ def get_load_flow_results(app, path, anon_rev, prefix):
     load_flow_results["lines"] = line_dict
 
     # get the buses and print their voltage
-    Buses = app.GetCalcRelevantObjects("*.ElmTerm")
+    buses = app.GetCalcRelevantObjects("*.ElmTerm")
     bus_dict = {}
-    for bus in Buses:  # loop through list
+    for bus in buses:  # loop through list
 
         if name.startswith(prefix):
             orig_name = anon_rev[name]
@@ -288,9 +289,11 @@ def get_load_flow_results(app, path, anon_rev, prefix):
 #     Takes a snapshot of the current switching state and exports it as pdf file.
 
 #     Input:
-#     - strng_graphic_name: string name of the graphic that is to be exported including the graphic ending ".IntGrfnet" (e.g. "D2.IntGrfnet")
+#     - strng_graphic_name: string name of the graphic that is to be exported including
+#           the graphic ending ".IntGrfnet" (e.g. "D2.IntGrfnet")
 #     - obj_substat: pf object of the substation, if not given, the entire diagram is exported.
-#     - scaling_fac: factor to adjust scaling of the pdf print (for large zones a scaling factor between >1-2 is appropriate)
+#     - scaling_fac: factor to adjust scaling of the pdf print (for large zones a scaling factor
+#           between >1-2 is appropriate)
 
 #     """
 #     # get active project
@@ -326,7 +329,8 @@ def get_load_flow_results(app, path, anon_rev, prefix):
 #         # define subregion to export selection of graphical diagram
 #         comWr.exportSubregion = 1
 #         # convertion of the objects coordinates to coordinates for the grid
-#         # Note: for some reason scaling with *10000 is required to set the comWr attributes correctly
+#         # Note: for some reason scaling with *10000 is required to set the comWr
+#                   attributes correctly
 #         comWr.regionTop = y_coordinate - scaling_fac * 1000
 #         comWr.regionBottom = y_coordinate + scaling_fac * 1000
 #         comWr.regionRight = x_coordinate + scaling_fac * 1000
