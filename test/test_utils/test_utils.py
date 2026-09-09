@@ -7,13 +7,51 @@ import pytest
 from utils import utils
 
 
-def test_seeded_name_anonyzer() -> None:
+@pytest.mark.parametrize("seed_input,time_output", [("test_seed", 956552995)])
+def test_seeded_name_anonymizer_time_adding(seed_input, time_output) -> None:
     """Verify SeededNameAnonymizer initializes its attributes correctly."""
-    anonymizer = utils.SeededNameAnonymizer("test_seed")
-    assert anonymizer.time_adding == 956552995
-    assert anonymizer.seed == "test_seed"
-    assert anonymizer.prefix == "ANON_"
-    assert anonymizer.length == 10
+    anonymizer = utils.SeededNameAnonymizer(seed_input)
+    assert anonymizer.time_adding == time_output
+    assert anonymizer.seed == seed_input
+
+
+@pytest.mark.parametrize(
+    "prefix_input,prefix_output", [(None, "ANON_"), ("AnotherAnon", "AnotherAnon")]
+)
+def test_seeded_name_anonymizer_prefix(prefix_input, prefix_output) -> None:
+    """Verify SeededNameAnonymizer initializes its attributes correctly."""
+    if prefix_input is None:
+        anonymizer = utils.SeededNameAnonymizer("test_seed")
+    else:
+        anonymizer = utils.SeededNameAnonymizer("test_seed", prefix=prefix_input)
+    assert anonymizer.prefix == prefix_output
+
+
+@pytest.mark.parametrize(
+    "alteration_factor_input,alteration_factor_output",
+    [(None, 5), (20, 5), (1, 1)],
+)
+def test_seeded_name_anonymizer_alteration_factor(
+    alteration_factor_input, alteration_factor_output
+) -> None:
+    """Verify SeededNameAnonymizer initializes its attributes correctly."""
+    if alteration_factor_input is None:
+        anonymizer = utils.SeededNameAnonymizer("test_seed")
+    else:
+        anonymizer = utils.SeededNameAnonymizer(
+            "test_seed", alteration_factor=alteration_factor_input
+        )
+    assert anonymizer.alteration_factor == alteration_factor_output
+
+
+@pytest.mark.parametrize("length_input,length_output", [(None, 10), (15, 15)])
+def test_seeded_name_anonymizer_length(length_input, length_output) -> None:
+    """Verify SeededNameAnonymizer initializes its attributes correctly."""
+    if length_input is None:
+        anonymizer = utils.SeededNameAnonymizer("test_seed")
+    else:
+        anonymizer = utils.SeededNameAnonymizer("test_seed", length=length_input)
+    assert anonymizer.length == length_output
 
 
 def test_get_hash():
