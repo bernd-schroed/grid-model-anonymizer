@@ -185,7 +185,7 @@ def anonymize_json_file(
     input_json: str,
     output_json: str,
     mapping_output: Path,
-    seed: str,
+    anonymizer: utils.SeededNameAnonymizer,
     categories: Optional[List[str]] = None,
 ):
     """
@@ -218,7 +218,6 @@ def anonymize_json_file(
         prefered_categories = categories
     else:
         prefered_categories = _get_json_keys(data)
-    anonymizer = utils.SeededNameAnonymizer(seed=seed, prefix="ANON_", length=10)
 
     anonymized_data = anonymize_json_data(data, anonymizer, prefered_categories)
 

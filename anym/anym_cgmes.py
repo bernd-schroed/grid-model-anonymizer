@@ -274,11 +274,13 @@ def _anonymize_line_specs(
 
         # every other spec is an impedance and is therefore slightly altered
         else:
-            alteration_seed = utils.get_hash_float(
+            random_alteration = utils.get_hash_float(
                 seed=anonymizer.seed,
                 tag=f"impedance_alteration_{loc}_{cur_rdf_id}",
             )
-            alteration_factor = 1.0 + (alteration_seed - 0.5) * 0.2
+            alteration_factor = (
+                1.0 + (random_alteration - 0.5) * anonymizer.alteration_factor / 100
+            )
 
             new_impedance = elem_value * alteration_factor
             mapping[loc] = elem_value
@@ -398,12 +400,11 @@ def anonymize_cgmes(
     out_path: Path,
     seed: str,
     mapping_out_path: Path,
+    anonymizer: utils.SeededNameAnonymizer,
     *,
     desc: bool = False,
     gps: bool = False,
     remap_ids: bool = False,
-    prefix: str = "ANON_",
-    hash_length: int = 10,
 ) -> None:
     """
     Anonymize a CGMES bundle.
@@ -429,9 +430,6 @@ def anonymize_cgmes(
 
     logger.info("=== anym_cgmes.py: Start Anonymize ===")
 
-    anonymizer = utils.SeededNameAnonymizer(
-        seed=seed, prefix=prefix, length=hash_length
-    )
     gps_transform = utils.build_geo_transform(seed)
 
     with tempfile.TemporaryDirectory() as tmp_str:

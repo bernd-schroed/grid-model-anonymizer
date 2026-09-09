@@ -68,6 +68,8 @@ import re
 from pathlib import Path
 from typing import Dict, List, Tuple
 
+MAX_ALTERATION = 5
+
 
 # ----------------------------
 # Anonymizer container (UNIFIED STRING MAPPING)
@@ -75,11 +77,19 @@ from typing import Dict, List, Tuple
 class SeededNameAnonymizer:
     """Unified seeded anonymizer for string values and special mappings."""
 
-    def __init__(self, seed: str, prefix: str = "ANON_", length: int = 10):
+    def __init__(
+        self,
+        seed: str,
+        prefix: str = "ANON_",
+        alteration_factor: float = 5,
+        length: int = 10,
+    ):
         self.seed = str(seed)
         self.prefix = prefix
         self.length = int(length)
-
+        self.alteration_factor = (
+            alteration_factor if alteration_factor <= MAX_ALTERATION else MAX_ALTERATION
+        )
         # One unified mapping for all ANON_* string anonymizations:
         # original -> anon
         self.forward: Dict[str, str] = {}

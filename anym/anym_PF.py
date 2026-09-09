@@ -314,7 +314,9 @@ def set_impedances(
             seed=anonymizer.seed,
             tag=f"impedance_alteration_{impedance_type}_{ln_name}",
         )
-        alteration_factor = 1.0 + (alteration_seed - 0.5) * 0.2
+        alteration_factor = (
+            1.0 + (alteration_seed - 0.5) * anonymizer.alteration_factor / 100
+        )
 
         new_impedance_per_km = impedance_value_per_km * ratio * alteration_factor
         pf_utils.safe_set(
@@ -422,12 +424,11 @@ def anonymize_objects(
     app,
     objects: List,
     seed: str,
+    anonymizer: utils.SeededNameAnonymizer,
     desc: bool,
     gps: bool,
     remap_ids: bool,
-    prefix: str = "ANON_",
-    length: int = 10,
-) -> utils.SeededNameAnonymizer:
+) -> None:
     """
     Anonymize a collected list of PF objects in place and return the mapping.
 
@@ -461,7 +462,6 @@ def anonymize_objects(
         study-case times), ready to be persisted via
         `utils.save_mapping_json`.
     """
-    anonymizer = utils.SeededNameAnonymizer(seed=seed, prefix=prefix, length=length)
     gps_transform = utils.build_geo_transform(seed)
 
     # Store original keys for the second pass:
@@ -572,8 +572,6 @@ def anonymize_objects(
     finally:
         pf_utils.pf_bulk_mode_end(app)
 
-    return anonymizer
-
 
 # ----------------------------
 # Public entrypoints
@@ -586,8 +584,7 @@ def run_powerfactory_import_export(
     desc: bool,
     gps: bool,
     remap_ids: bool,
-    prefix: str = "ANON_",
-    hash_length: int = 10,
+    anonymizer: utils.SeededNameAnonymizer,
 ):
     """
     End-to-end PF anonymization: import .pfd -> anonymize -> export .pfd.
@@ -669,15 +666,14 @@ def run_powerfactory_import_export(
     objects = pf_utils.collect_unique_objects_for_anonymization(app)
     logger.info("Objects to anonymize (unique): %d", len(objects))
 
-    anonymizer = anonymize_objects(
+    anonymize_objects(
         app=app,
         objects=objects,
         seed=random_seed,
+        anonymizer=anonymizer,
         desc=desc,
         gps=gps,
         remap_ids=remap_ids,
-        prefix=prefix,
-        length=hash_length,
     )
 
     utils.save_mapping_json(mapping_out_path, anonymizer)

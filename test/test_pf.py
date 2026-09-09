@@ -74,7 +74,7 @@ class TestPowerFactory:
             "Texas Grid", ".pfd", "PowerFactory", [gps_flag, desc_flag, id_flag]
         )
         seed = "test_seed"
-
+        anonymizer = utils.SeededNameAnonymizer(seed=seed)
         anym_pf.run_powerfactory_import_export(
             in_path=orig_file,
             out_path=anym_file,
@@ -83,6 +83,7 @@ class TestPowerFactory:
             desc=desc_flag,
             gps=gps_flag,
             remap_ids=id_flag,
+            anonymizer=anonymizer,
         )
 
         assert mapping_file.exists()
@@ -145,7 +146,7 @@ def test_powerfactory_load_flow_accuracy(path):
     )
 
     seed = "test_seed"
-
+    anonymizer = utils.SeededNameAnonymizer(seed=seed)
     anym_pf.run_powerfactory_import_export(
         in_path=orig_path,
         out_path=anym_path,
@@ -154,6 +155,7 @@ def test_powerfactory_load_flow_accuracy(path):
         desc=False,
         gps=False,
         remap_ids=False,
+        anonymizer=anonymizer,
     )
     (
         _,

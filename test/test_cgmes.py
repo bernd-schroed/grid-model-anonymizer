@@ -76,11 +76,13 @@ class TestCGMES:
             filename, ".zip", "cgmes", [gps_flag, desc_flag, id_flag]
         )
         seed = "test_seed"
+        anonymizer = utils.SeededNameAnonymizer(seed=seed)
         anonymize_cgmes(
             in_path=orig_file,
             out_path=anym_file,
             seed=seed,
             mapping_out_path=mapping_file,
+            anonymizer=anonymizer,
             desc=desc_flag,
             gps=gps_flag,
             remap_ids=id_flag,

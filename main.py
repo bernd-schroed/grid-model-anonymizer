@@ -71,6 +71,7 @@ from anym.anym_json import anonymize_json_file, restore_json_anonymization
 from anym.anym_pf import run_powerfactory_import_export
 from restore.restore_cgmes import restore_cgmes
 from restore.restore_pf import run_powerfactory_restore
+from utils import utils
 
 logger = logging.getLogger("Main.py")
 
@@ -152,6 +153,13 @@ def parse_args():
         "--reverse",
         action="store_true",
         help="Restore / reverse anonymization instead of anonymizing",
+    )
+
+    parser.add_argument(
+        "--alteration_factor",
+        type=float,
+        default=5,
+        help="How much line impedances should be altered in percent",
     )
 
     # --- PowerFactory / CGMES flags ---
@@ -276,6 +284,10 @@ def main():
 
     suf = args.input_file.suffix.lower()
 
+    anonymizer = utils.SeededNameAnonymizer(
+        seed=args.seed, alteration_factor=args.alteration_factor
+    )
+
     # ------------------------------------------------------------------ PFD
     if suf == ".pfd":
         logger.debug("seed        :%s", args.seed)
@@ -294,6 +306,7 @@ def main():
                 out_path=args.output_file,
                 random_seed=args.seed,
                 mapping_out_path=args.mapping_file,
+                anonymizer=anonymizer,
                 desc=args.desc,
                 gps=args.gps,
                 remap_ids=args.remap_ids,
@@ -317,6 +330,7 @@ def main():
                 out_path=args.output_file,
                 seed=args.seed,
                 mapping_out_path=args.mapping_file,
+                anonymizer=anonymizer,
                 desc=args.desc,
                 gps=args.gps,
                 remap_ids=args.remap_ids,
@@ -354,7 +368,7 @@ def main():
                 input_json=args.input_file,
                 output_json=args.output_file,
                 mapping_output=args.mapping_file,
-                seed=args.seed,
+                anonymizer=anonymizer,
                 categories=categories,
             )
     else:

@@ -34,14 +34,14 @@ def test_get_hash():
 def test_translate(input_value, output_value):
     """Check that translate returns the expected prefixed, hashed name."""
     # check for different inputs
-    anonymizer = utils.SeededNameAnonymizer("test_seed", "Anon_")
+    anonymizer = utils.SeededNameAnonymizer(seed="test_seed", prefix="Anon_")
     translation = anonymizer.translate(input_value)
     assert translation == output_value
 
 
 def test_translate_attr():
     """Check that translate_attr returns the expected prefixed, hashed name."""
-    anonymizer = utils.SeededNameAnonymizer("test_seed", "Anon_")
+    anonymizer = utils.SeededNameAnonymizer(seed="test_seed", prefix="Anon_")
     translation = anonymizer.translate_attr("Text", "TexT")
     assert translation == "Anon_1E0DAD6AD7"
 

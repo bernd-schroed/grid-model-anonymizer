@@ -49,11 +49,12 @@ class TestJSON:
                 categories,
             )
         seed = "test_seed"
+        anonymizer = utils.SeededNameAnonymizer(seed=seed)
         anym_json.anonymize_json_file(
             input_json=orig_file,
             output_json=anym_file,
             mapping_output=mapping_file,
-            seed=seed,
+            anonymizer=anonymizer,
             categories=categories,
         )
 
