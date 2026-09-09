@@ -156,7 +156,7 @@ def parse_args():
     )
 
     parser.add_argument(
-        "--alteration_factor",
+        "--alteration-factor",
         type=float,
         default=5,
         help="How much line impedances should be altered in percent",
