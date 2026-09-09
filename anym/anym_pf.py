@@ -310,15 +310,12 @@ def set_impedances(
             return
 
         # set the alteration
-        alteration_seed = utils.get_hash_float(
-            seed=anonymizer.seed,
-            tag=f"impedance_alteration_{impedance_type}_{ln_name}",
+        new_impedance_per_km = utils.get_new_impedance(
+            old_value=impedance_value_per_km,
+            anonymizer=anonymizer,
+            name=impedance_type,
+            current_id=ln_name,
         )
-        alteration_factor = (
-            1.0 + (alteration_seed - 0.5) * 2 * anonymizer.alteration_factor / 100
-        )
-
-        new_impedance_per_km = impedance_value_per_km * ratio * alteration_factor
         pf_utils.safe_set(
             new_type, impedance_type, float(new_impedance_per_km), verbose=False
         )

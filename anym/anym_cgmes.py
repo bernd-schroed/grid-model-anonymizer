@@ -274,15 +274,13 @@ def _anonymize_line_specs(
 
         # every other spec is an impedance and is therefore slightly altered
         else:
-            random_alteration = utils.get_hash_float(
-                seed=anonymizer.seed,
-                tag=f"impedance_alteration_{loc}_{cur_rdf_id}",
-            )
-            alteration_factor = (
-                1.0 + (random_alteration - 0.5) * anonymizer.alteration_factor / 100
+            new_impedance = utils.get_new_impedance(
+                old_value=elem_value,
+                anonymizer=anonymizer,
+                name=loc,
+                current_id=cur_rdf_id,
             )
 
-            new_impedance = elem_value * alteration_factor
             mapping[loc] = elem_value
 
             el.text = str(new_impedance)

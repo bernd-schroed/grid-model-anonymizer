@@ -534,6 +534,25 @@ def format_float(x: float) -> str:
 # -------------------------------------------------------------------------
 
 
+def get_new_impedance(
+    old_value: float,
+    anonymizer: SeededNameAnonymizer,
+    name: str,
+    current_id: str,
+    ratio: float = 1,
+):
+    random_alteration = get_hash_float(
+        seed=anonymizer.seed,
+        tag=f"impedance_alteration_{name}_{current_id}",
+    )
+    alteration_factor = (
+        1.0 + (random_alteration - 0.5) * 2 * anonymizer.alteration_factor / 100
+    )
+
+    new_impedance = old_value * alteration_factor * ratio
+    return new_impedance
+
+
 # ---------------------------- test helpers -------------------------------
 
 
