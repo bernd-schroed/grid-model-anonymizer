@@ -715,9 +715,23 @@ def check_load_flow_accuracy(orig_path: Path, anym_path: Path, mapping_out_path:
                     rel_error = orig_value_entry - anym_value_entry
                 difference_list.append(rel_error)
 
-    mean_square_error = sum(x**2 for x in difference_list) / len(difference_list)
+    square_error = [x**2 for x in difference_list]
+    mean_square_error = sum(square_error) / len(square_error)
+
     rmse = math.sqrt(mean_square_error)
+    max_error = math.sqrt(max(square_error))
+    logger.info(
+        "The maximum deviation of the load flow results is %0.2f%% in one of the elements, the Alteration Factor is at %s%%.",
+        max_error * 100,
+        alt_factor,
+    )
     if rmse >= 1 / 100:
         logger.warning(
-            "The averaged error for load flow analysis is larger than 1%! Use a smaller alteration factor to reduce the error"
+            "The averaged error for load flow analysis is larger than 1%% with %0.2f%%! Use a smaller alteration factor to reduce the error.",
+            rmse * 100,
+        )
+    else:
+        logger.warning(
+            "The averaged error for a load flow analysis is at %0.2f%%!",
+            rmse * 100,
         )
