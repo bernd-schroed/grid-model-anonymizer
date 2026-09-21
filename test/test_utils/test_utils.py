@@ -29,7 +29,7 @@ def test_seeded_name_anonymizer_prefix(prefix_input, prefix_output) -> None:
 
 @pytest.mark.parametrize(
     "alteration_factor_input,alteration_factor_output",
-    [(None, 5), (20, 5), (1, 1)],
+    [(None, 5), (20, 10), (1, 1)],
 )
 def test_seeded_name_anonymizer_alteration_factor(
     alteration_factor_input, alteration_factor_output
