@@ -261,11 +261,16 @@ def _anonymize_line_specs(
         # getting the length of the element
         elem_value = float(el.text)
         cur_rdf_id = cgmes_utils.get_parent_rdfinfo(el, cgmes_utils.RDF_ID)
-
-        # length is always set to 1 km
+        alt_factor = utils.get_alteration(
+            anonymizer=anonymizer,
+            name=loc,
+            current_id=cur_rdf_id,
+        )
+        # length is always set altered by the alteeration
         if loc == "Conductor.length":
             mapping[loc] = elem_value
-            el.text = str(1)  # 1km set
+            new_length = elem_value * alt_factor
+            el.text = str(new_length)
             anonymizer.line_mapping.setdefault(
                 cur_rdf_id,
                 mapping,
@@ -274,15 +279,9 @@ def _anonymize_line_specs(
 
         # every other spec is an impedance and is therefore slightly altered
         else:
-            new_impedance = utils.get_new_impedance(
-                old_value=elem_value,
-                anonymizer=anonymizer,
-                name=loc,
-                current_id=cur_rdf_id,
-            )
 
             mapping[loc] = elem_value
-
+            new_impedance = elem_value * alt_factor
             el.text = str(new_impedance)
 
 
