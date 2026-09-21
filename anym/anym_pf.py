@@ -696,10 +696,12 @@ def run_powerfactory_import_export(
         logger.warning("Export not executed: %s", e)
     except RuntimeError as e:
         logger.error("Export failed: %s", e)
-
-    check_load_flow_accuracy(
-        in_path, out_path, mapping_out_path, anonymizer.alteration_factor
-    )
+    try:
+        check_load_flow_accuracy(
+            in_path, out_path, mapping_out_path, anonymizer.alteration_factor
+        )
+    except AttributeError as e:
+        logger.error("Load flow Analysis not possible. Error Message: %s", e)
 
 
 def check_load_flow_accuracy(

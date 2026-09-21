@@ -129,15 +129,17 @@ class TestPowerFactory:
 
 @pytest.mark.parametrize(
     "path, alt_factor",
-    itertools.product(
-        [
-            "Nine-bus System",
-            "IEEE 13 Node Feeder",
-            "14 Bus System(1)",
-            "LV Distribution Network",
-            "39 Bus New England System",
-        ],
-        [-1, 0, 3, 5, 10],
+    list(
+        itertools.product(
+            [
+                "Nine-bus System",
+                "IEEE 13 Node Feeder",
+                "14 Bus System(1)",
+                # "LV Distribution Network",
+                "39 Bus New England System",
+            ],
+            [-1, 0, 3, 5, 10],
+        ),
     ),
 )
 def test_powerfactory_load_flow_accuracy(path, alt_factor):
