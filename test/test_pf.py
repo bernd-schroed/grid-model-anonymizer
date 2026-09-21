@@ -1,6 +1,8 @@
 """Round-trip tests for PowerFactory project anonymization and restoration."""
 
+import itertools
 import logging
+import math
 import sys
 from pathlib import Path
 from typing import Dict
@@ -126,19 +128,20 @@ class TestPowerFactory:
 
 
 @pytest.mark.parametrize(
-    "path",
-    [
-        "Nine-bus System",
-        "IEEE 13 Node Feeder",
-        "14 Bus System(1)",
-        "LV Distribution Network",
-        "39 Bus New England System",
-    ],
+    "path, alt_factor",
+    itertools.product(
+        [
+            "Nine-bus System",
+            "IEEE 13 Node Feeder",
+            "14 Bus System(1)",
+            "LV Distribution Network",
+            "39 Bus New England System",
+        ],
+        [-1, 0, 3, 5, 10],
+    ),
 )
-def test_powerfactory_load_flow_accuracy(path):
+def test_powerfactory_load_flow_accuracy(path, alt_factor):
     """Check that load_flow_results correctly loads and parses a flow results graphic file."""
-    # SetCluster.CalcCluster
-    # ComLdf Execute
     if pf_utils.get_pf_version() is False:
         pytest.skip("No PowerFactory installed")
     orig_path, anym_path, _, mapping_path = utils.get_test_files(
@@ -146,7 +149,7 @@ def test_powerfactory_load_flow_accuracy(path):
     )
 
     seed = "test_seed"
-    anonymizer = utils.SeededNameAnonymizer(seed=seed)
+    anonymizer = utils.SeededNameAnonymizer(seed=seed, alteration_factor=alt_factor)
     anym_pf.run_powerfactory_import_export(
         in_path=orig_path,
         out_path=anym_path,
@@ -168,118 +171,52 @@ def test_powerfactory_load_flow_accuracy(path):
     ) = utils.get_mappings(mapping_path)
 
     app = pf.GetApplication()
-    orig_ldf_results = get_load_flow_results(app, orig_path, anon_rev, prefix)
-    anym_ldf_results = get_load_flow_results(app, anym_path, anon_rev, prefix)
-
+    orig_ldf_results = pf_utils.get_load_flow_results(app, orig_path, anon_rev, prefix)
+    anym_ldf_results = pf_utils.get_load_flow_results(app, anym_path, anon_rev, prefix)
     load_flow_asserts(
-        orig_data=orig_ldf_results["generators"],
-        anym_data=anym_ldf_results["generators"],
-    )
-    load_flow_asserts(
-        orig_data=orig_ldf_results["lines"], anym_data=anym_ldf_results["lines"]
-    )
-    load_flow_asserts(
-        orig_data=orig_ldf_results["busses"], anym_data=anym_ldf_results["busses"]
+        orig_ldf_results=orig_ldf_results,
+        anym_ldf_results=anym_ldf_results,
+        alt_factor=alt_factor,
+        project_name=orig_path.stem,
     )
     utils.delete_test_data([anym_path, mapping_path])
 
 
-def load_flow_asserts(orig_data, anym_data):
-    for name, elems in orig_data.items():
-        try:
-            for elem_key, elem_value in elems.items():
-                assert elem_value == pytest.approx(anym_data[name][elem_key])
-        except AttributeError as e:
-            if elems == "Unknown":
-                pass
-            else:
-                raise AttributeError from e
+def load_flow_asserts(
+    orig_ldf_results, anym_ldf_results, alt_factor, project_name
+) -> float:
+    difference_list = []
+    for type_key, type_entry in orig_ldf_results.items():
+        for elem_key, elem_entry in type_entry.items():
 
+            for value_key, orig_value_entry in elem_entry.items():
+                anym_value_entry = anym_ldf_results[type_key][elem_key][value_key]
+                try:
+                    rel_error = (orig_value_entry - anym_value_entry) / orig_value_entry
+                except ZeroDivisionError:
+                    rel_error = orig_value_entry - anym_value_entry
+                difference_list.append(rel_error)
 
-def get_load_flow_results(app, path, anon_rev, prefix):
-    """Main Parts are taken from
-    https://thesmartinsights.com/run-digsilent-powerfactory-via-the-python-api-jump-start-to-your-powerfactory-automatization/
-    and adapted for this use case"""
-    project_name = path.stem
+    square_error = [x**2 for x in difference_list]
+    mean_square_error = sum(square_error) / len(square_error)
 
-    pf_utils.delete_project_if_exists(app, project_name)
-    pf_utils.import_pfd_into_current_user(app, path)
-    pf_utils.activate_project(app, project_name)
+    rmse = math.sqrt(mean_square_error)
+    max_error = math.sqrt(max(square_error))
+    with open("Load_flow_test.txt", mode="a", encoding="utf-8") as f:
+        f.write(f"Current Network: {project_name} \n")
 
-    # get load flow object and execute
-    ldf_object = app.GetFromStudyCase("ComLdf")  # get load flow object
-    ldf_object.Execute()  # execute load flow
-    load_flow_results = {"generators": [], "lines": [], "busses": []}
-
-    # get the generators and their active/reactive power and loading
-    generators = app.GetCalcRelevantObjects("*.ElmSym")
-    gen_dict: Dict[str, float] = {}
-
-    for gen in generators:  # loop through list
-        name = getattr(gen, "loc_name")  # get name of the generator
-
-        if name.startswith(prefix):
-            orig_name = anon_rev[name]
+        f.write(
+            f"The maximum deviation of the load flow results is {max_error:.2f}% in one of the elements, the Alteration Factor is at {alt_factor:.0f}%.\n",
+        )
+        if rmse >= 1 / 100:
+            f.write(
+                f"The averaged error for load flow analysis is larger than 1% with {rmse *100:.2f}%! Use a smaller alteration factor to reduce the error.\n",
+            )
         else:
-            orig_name = name
-
-        try:
-            active_power = getattr(gen, "c:p")  # get active power
-            reactive_power = getattr(gen, "c:q")  # get reactive power
-            genloading = getattr(gen, "c:loading")  # get loading
-            gen_entry = {"P": active_power, "Q": reactive_power, "loading": genloading}
-
-        except AttributeError:
-            gen_entry = "Unknown"
-
-        gen_dict[orig_name] = gen_entry
-
-    load_flow_results["generators"] = gen_dict
-
-    # get the lines and print their loading
-    lines = app.GetCalcRelevantObjects("*.ElmLne")
-    line_dict = {}
-    for line in lines:  # loop through list
-        name = getattr(line, "loc_name")  # get name of the line
-
-        if name.startswith(prefix):
-            orig_name = anon_rev[name]
-        else:
-            orig_name = name
-
-        try:
-            value = getattr(line, "c:loading")  # get value for the loading
-            line_entry = {"loading": value}
-
-        except AttributeError:
-            line_entry = "Unknown"
-
-        line_dict[orig_name] = line_entry
-    load_flow_results["lines"] = line_dict
-
-    # get the buses and print their voltage
-    buses = app.GetCalcRelevantObjects("*.ElmTerm")
-    bus_dict = {}
-    for bus in buses:  # loop through list
-
-        if name.startswith(prefix):
-            orig_name = anon_rev[name]
-        else:
-            orig_name = name
-
-        name = getattr(bus, "loc_name")  # get name of the bus
-
-        try:
-            amp = getattr(bus, "m:u1")  # get voltage magnitude
-            phase = getattr(bus, "m:phiu")  # get voltage angle
-            bus_entry = {"u": amp, "deg": phase}
-
-        except AttributeError:
-            bus_entry = "Unknown"
-            bus_dict[orig_name] = bus_entry
-
-    load_flow_results["busses"] = bus_dict
-    return load_flow_results
+            f.write(
+                f"The averaged error for a load flow analysis is at {rmse*100:.2f}%!\n",
+            )
+        f.write("\n")
 
 
 # def print_snapshot_of_grid(
