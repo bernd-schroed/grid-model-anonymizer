@@ -310,12 +310,14 @@ def set_impedances(
             return
 
         # set the alteration
-        new_impedance_per_km = utils.get_new_impedance(
-            old_value=impedance_value_per_km,
+        alteration = utils.get_alteration(
             anonymizer=anonymizer,
             name=impedance_type,
             current_id=ln_name,
         )
+
+        new_impedance_per_km = impedance_value_per_km * alteration * ratio
+
         pf_utils.safe_set(
             new_type, impedance_type, float(new_impedance_per_km), verbose=False
         )
@@ -348,9 +350,21 @@ def set_line_length(obj: object, anonymizer: utils.SeededNameAnonymizer) -> None
     try:
         new_type = create_new_line_type(ln_type, new_name)
 
+        alteration = utils.get_alteration(
+            anonymizer=anonymizer,
+            name="length",
+            current_id=ln_name,
+        )
+        new_length = old_len * alteration
+        ratio = old_len / new_length
         # reset the impedance, since the new line length is always 1 km the ratio = old length
-        impedance_ratio = old_len / 1
-        set_impedances(ln_type, new_type, impedance_ratio, anonymizer, ln_name)
+        set_impedances(
+            ln_type,
+            new_type,
+            ratio,
+            anonymizer,
+            ln_name,
+        )
 
         # save the new line in the anonymizer
         anonymizer.line_mapping.setdefault(
@@ -361,7 +375,7 @@ def set_line_length(obj: object, anonymizer: utils.SeededNameAnonymizer) -> None
             },
         )
         # reset the line data
-        pf_utils.safe_set(obj, "dline", float(1), verbose=False)
+        pf_utils.safe_set(obj, "dline", new_length, verbose=False)
         pf_utils.safe_set(obj, "typ_id", new_type, verbose=False)
     except AttributeError as e:
         raise AttributeError from e
@@ -683,10 +697,14 @@ def run_powerfactory_import_export(
     except RuntimeError as e:
         logger.error("Export failed: %s", e)
 
-    check_load_flow_accuracy(in_path, out_path, mapping_out_path)
+    check_load_flow_accuracy(
+        in_path, out_path, mapping_out_path, anonymizer.alteration_factor
+    )
 
 
-def check_load_flow_accuracy(orig_path: Path, anym_path: Path, mapping_out_path: Path):
+def check_load_flow_accuracy(
+    orig_path: Path, anym_path: Path, mapping_out_path: Path, alt_factor: float
+):
     (
         _,
         anon_rev,

@@ -68,7 +68,7 @@ import re
 from pathlib import Path
 from typing import Dict, List, Tuple
 
-MAX_ALTERATION = 5
+MAX_ALTERATION = 10
 
 
 # ----------------------------
@@ -534,23 +534,19 @@ def format_float(x: float) -> str:
 # -------------------------------------------------------------------------
 
 
-def get_new_impedance(
-    old_value: float,
+def get_alteration(
     anonymizer: SeededNameAnonymizer,
     name: str,
     current_id: str,
-    ratio: float = 1,
 ):
     random_alteration = get_hash_float(
         seed=anonymizer.seed,
         tag=f"impedance_alteration_{name}_{current_id}",
     )
-    alteration_factor = (
+    alteration = (
         1.0 + (random_alteration - 0.5) * 2 * anonymizer.alteration_factor / 100
     )
-
-    new_impedance = old_value * alteration_factor * ratio
-    return new_impedance
+    return alteration
 
 
 # ---------------------------- test helpers -------------------------------
