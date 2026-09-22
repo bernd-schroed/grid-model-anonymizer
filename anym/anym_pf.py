@@ -350,21 +350,9 @@ def set_line_length(obj: object, anonymizer: utils.SeededNameAnonymizer) -> None
     try:
         new_type = create_new_line_type(ln_type, new_name)
 
-        alteration = utils.get_alteration(
-            anonymizer=anonymizer,
-            name="length",
-            current_id=ln_name,
-        )
-        new_length = old_len * alteration
-        ratio = old_len / new_length
+        ratio = old_len
         # reset the impedance, since the new line length is always 1 km the ratio = old length
-        set_impedances(
-            ln_type,
-            new_type,
-            ratio,
-            anonymizer,
-            ln_name,
-        )
+        set_impedances(ln_type, new_type, ratio, anonymizer, ln_name)
 
         # save the new line in the anonymizer
         anonymizer.line_mapping.setdefault(
@@ -375,7 +363,7 @@ def set_line_length(obj: object, anonymizer: utils.SeededNameAnonymizer) -> None
             },
         )
         # reset the line data
-        pf_utils.safe_set(obj, "dline", new_length, verbose=False)
+        pf_utils.safe_set(obj, "dline", float(1), verbose=False)
         pf_utils.safe_set(obj, "typ_id", new_type, verbose=False)
     except AttributeError as e:
         raise AttributeError from e

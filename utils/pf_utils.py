@@ -46,8 +46,12 @@ logger = logging.getLogger("pf_utils.py")
 IMPEDANCE_TYPES = [
     "rline",
     "xline",
+    "cline",
+    "lline",
     "rline0",
     "xline0",
+    "cline0",
+    "lline0",
 ]  # do the 0 impedances actually need to be reset?
 
 
