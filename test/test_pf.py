@@ -223,6 +223,52 @@ def load_flow_asserts(
         f.write("\n")
 
 
+def get_load_flow_diff_plots():
+    path = "39 Bus New England System"
+    if pf_utils.get_pf_version() is False:
+        pytest.skip("No PowerFactory installed")
+    orig_path, anym_path, _, mapping_path = utils.get_test_files(
+        path, ".pfd", "PowerFactory", []
+    )
+
+    seed = "test_seed"
+    alt_factors = [1, 3, 5, 10]
+    load_flow_results = {}
+    for alt_factor in alt_factors:
+
+        anonymizer = utils.SeededNameAnonymizer(seed=seed, alteration_factor=alt_factor)
+
+        anym_pf.run_powerfactory_import_export(
+            in_path=orig_path,
+            out_path=anym_path,
+            random_seed=seed,
+            mapping_out_path=mapping_path,
+            desc=False,
+            gps=False,
+            remap_ids=False,
+            anonymizer=anonymizer,
+        )
+        (
+            _,
+            anon_rev,
+            _,
+            _,
+            _,
+            _,
+            prefix,
+        ) = utils.get_mappings(mapping_path)
+
+        app = pf.GetApplication()
+
+        orig_ldf_results = pf_utils.get_load_flow_results(
+            app, orig_path, anon_rev, prefix
+        )
+        anym_ldf_results = pf_utils.get_load_flow_results(
+            app, anym_path, anon_rev, prefix
+        )
+        utils.delete_test_data([anym_path, mapping_path])
+
+
 # def print_snapshot_of_grid(
 #     strng_graphic_name, obj_substat=None, state_indx: int = 0, scaling_fac=1
 # ):
