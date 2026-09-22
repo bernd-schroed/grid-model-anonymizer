@@ -128,7 +128,7 @@ class TestPowerFactory:
 
 
 @pytest.mark.parametrize(
-    "path, alt_factor",
+    "path, alt_factor_percent",
     list(
         itertools.product(
             [
@@ -142,7 +142,7 @@ class TestPowerFactory:
         ),
     ),
 )
-def test_powerfactory_load_flow_accuracy(path, alt_factor):
+def test_powerfactory_load_flow_accuracy(path, alt_factor_percent):
     """Check that load_flow_results correctly loads and parses a flow results graphic file."""
     if pf_utils.get_pf_version() is False:
         pytest.skip("No PowerFactory installed")
@@ -151,7 +151,9 @@ def test_powerfactory_load_flow_accuracy(path, alt_factor):
     )
 
     seed = "test_seed"
-    anonymizer = utils.SeededNameAnonymizer(seed=seed, alteration_factor=alt_factor)
+    anonymizer = utils.SeededNameAnonymizer(
+        seed=seed, alteration_factor=alt_factor_percent
+    )
     anym_pf.run_powerfactory_import_export(
         in_path=orig_path,
         out_path=anym_path,
@@ -178,7 +180,7 @@ def test_powerfactory_load_flow_accuracy(path, alt_factor):
     load_flow_asserts(
         orig_ldf_results=orig_ldf_results,
         anym_ldf_results=anym_ldf_results,
-        alt_factor=alt_factor,
+        alt_factor=alt_factor_percent,
         project_name=orig_path.stem,
     )
     utils.delete_test_data([anym_path, mapping_path])
@@ -208,7 +210,7 @@ def load_flow_asserts(
         f.write(f"Current Network: {project_name} \n")
 
         f.write(
-            f"The maximum deviation of the load flow results is {max_error:.2f}% in one of the elements, the Alteration Factor is at {alt_factor:.0f}%.\n",
+            f"The maximum deviation of the load flow results is {max_error*100:.2f}% in one of the elements, the Alteration Factor is at {alt_factor:.0f}%.\n",
         )
         if rmse >= 1 / 100:
             f.write(
@@ -288,4 +290,4 @@ if __name__ == "__main__":
     test_dir = Path(project_dir, "test")
     data_dir = Path(test_dir, "test_data", "PowerFactory")
     the_file = Path(data_dir, "orig", "Nine-bus System.pfd")
-    test_powerfactory_load_flow_accuracy("Nine-bus System")
+    test_powerfactory_load_flow_accuracy("Nine-bus System", 5)
