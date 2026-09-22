@@ -1039,18 +1039,18 @@ def get_load_flow_results(
     bus_dict = {}
     for bus in buses:  # loop through list
 
+        name = getattr(bus, "loc_name")  # get name of the bus
+
         if name.startswith(prefix):
             orig_name = anon_rev[name]
         else:
             orig_name = name
 
-        name = getattr(bus, "loc_name")  # get name of the bus
-
         try:
             amp = getattr(bus, "m:u1")  # get voltage magnitude
             phase = getattr(bus, "m:phiu")  # get voltage angle
             bus_entry = {"u": amp, "deg": phase}
-
+            bus_dict[orig_name] = bus_entry
         except AttributeError:
             bus_entry = "Unknown"
             bus_dict[orig_name] = bus_entry
