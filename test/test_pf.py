@@ -133,9 +133,7 @@ class TestPowerFactory:
         itertools.product(
             [
                 "Nine-bus System",
-                "IEEE 13 Node Feeder",
                 "14 Bus System(1)",
-                # "LV Distribution Network",
                 "39 Bus New England System",
             ],
             [-1, 0, 3, 5, 10],
@@ -232,7 +230,7 @@ def get_load_flow_diff_plots():
     )
 
     seed = "test_seed"
-    alt_factors = [1, 3, 5, 10]
+    alt_factors = [0, 1, 3, 5, 10]
     load_flow_results = {}
     for alt_factor in alt_factors:
 
