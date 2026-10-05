@@ -974,7 +974,7 @@ def kill_powerfactory():
 
 def get_load_flow_results(
     app, path: Path, anon_rev: dict, prefix: str, project_name: str = None
-) -> dict[str, dict]:
+):
     """Main Parts are taken from
     https://thesmartinsights.com/run-digsilent-powerfactory-via-the-python-api-jump-start-to-your-powerfactory-automatization/
     and adapted for this use case"""
