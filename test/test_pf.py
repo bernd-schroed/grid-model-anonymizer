@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 from typing import Dict
 
+import matplotlib.pyplot as plt
 import pytest
 
 sys.path.append(".")
@@ -222,7 +223,7 @@ def load_flow_asserts(
 
 
 def get_load_flow_diff_plots():
-    path = "39 Bus New England System"
+    path = "Nine-bus System"
     if pf_utils.get_pf_version() is False:
         pytest.skip("No PowerFactory installed")
     orig_path, anym_path, _, mapping_path = utils.get_test_files(
@@ -231,8 +232,8 @@ def get_load_flow_diff_plots():
 
     seed = "test_seed"
     alt_factors = [0, 1, 3, 5, 10]
-    load_flow_results = {}
-    for alt_factor in alt_factors:
+    load_flow_results = [{"factor": alt_factor} for alt_factor in alt_factors]
+    for alt_factor, load_flow_result in zip(alt_factors, load_flow_results):
 
         anonymizer = utils.SeededNameAnonymizer(seed=seed, alteration_factor=alt_factor)
 
@@ -264,7 +265,97 @@ def get_load_flow_diff_plots():
         anym_ldf_results = pf_utils.get_load_flow_results(
             app, anym_path, anon_rev, prefix
         )
+        load_flow_result["orig"] = orig_ldf_results
+        load_flow_result["anym"] = anym_ldf_results
         utils.delete_test_data([anym_path, mapping_path])
+
+    line_plots(load_flow_results)
+    buss_plots(load_flow_results)
+    generator_plots(load_flow_results)
+    print("done")
+
+
+def get_plot_data(load_flow_results, object_type="lines", data_type="loading"):
+    object_data = {"orig": []}
+    objects = tuple(load_flow_results[0]["orig"][object_type].keys())
+    object_data["orig"] = [100] * len(objects)
+    for load_flow_result in load_flow_results:
+        factor = load_flow_result["factor"]
+        anym_object = load_flow_result["anym"][object_type]
+        orig_object = load_flow_result["orig"][object_type]
+        object_data.update({factor: []})
+        for obj in objects:
+            if data_type == "deg":
+                object_data["orig"] = [0] * len(objects)
+                object_alteration = (
+                    orig_object[obj][data_type] - anym_object[obj][data_type]
+                )
+            else:
+                object_alteration = (
+                    anym_object[obj][data_type] / orig_object[obj][data_type] * 100
+                )
+            object_data[factor].append(object_alteration)
+        object_data[factor] = tuple(object_data[factor])
+    return object_data, objects
+
+
+def plot_specs(fig, ax, ymin, ymax):
+    ax.set_ylim(ymin - 0.05, ymax + 0.05)
+    ax.grid()
+    ax.legend()
+
+
+def line_plots(load_flow_results):
+
+    line_data, lines = get_plot_data(
+        load_flow_results, object_type="lines", data_type="loading"
+    )
+    ymax = max([max(x) for x in line_data.values()])
+    ymin = min([min(x) for x in line_data.values()])
+
+    line_fig, line_ax = plt.subplots()
+    line_ax.grouped_bar(line_data, tick_labels=lines)
+    plot_specs(line_fig, line_ax, ymin, ymax)
+    line_ax.set_title("Line Loading for Different Alteration Factors")
+    line_ax.set_ylabel("Loading [%]")
+
+    plt.show()
+
+
+def buss_plots(load_flow_results):
+    buss_voltage_data, busses = get_plot_data(
+        load_flow_results, object_type="busses", data_type="u"
+    )
+    buss_degree_data, _ = get_plot_data(
+        load_flow_results, object_type="busses", data_type="deg"
+    )
+    ymax = max([max(x) for x in buss_voltage_data.values()])
+    ymin = min([min(x) for x in buss_voltage_data.values()])
+
+    bus_fig, bus_ax = plt.subplots()
+    bus_ax.grouped_bar(buss_voltage_data, tick_labels=busses)
+
+    bus_ax.set_title("Line Loading for Different Alteration Factors")
+    bus_ax.set_ylabel("Loading [%]")
+    plot_specs(bus_fig, bus_ax, ymin, ymax)
+    plt.show()
+
+
+def generator_plots(load_flow_results):
+    generator_data, generators = get_plot_data(
+        load_flow_results, object_type="generators", data_type="loading"
+    )
+    ymax = max([max(x) for x in generator_data.values()])
+    ymin = min([min(x) for x in generator_data.values()])
+
+    gen_fig, gen_ax = plt.subplots()
+    gen_ax.grouped_bar(generator_data, tick_labels=generators)
+
+    gen_ax.set_title("Line Loading for Different Alteration Factors")
+    gen_ax.set_ylabel("Loading [%]")
+    plot_specs(gen_fig, gen_ax, ymin, ymax)
+
+    plt.show()
 
 
 # def print_snapshot_of_grid(
@@ -334,4 +425,4 @@ if __name__ == "__main__":
     test_dir = Path(project_dir, "test")
     data_dir = Path(test_dir, "test_data", "PowerFactory")
     the_file = Path(data_dir, "orig", "Nine-bus System.pfd")
-    test_powerfactory_load_flow_accuracy("Nine-bus System", 5)
+    get_load_flow_diff_plots()
