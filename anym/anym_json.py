@@ -71,6 +71,7 @@ def load_json_file(file_path: str):
     json.JSONDecodeError
         If the file is not a valid JSON.
     """
+    logger.debug("Loading Json file: %s", file_path)
     try:
         with open(file_path, "r", encoding="utf-8") as file:
             data = json.load(file)
@@ -99,6 +100,7 @@ def save_json_file(data, file_path: str):
     IOError
         If there is an error writing to the file.
     """
+    logger.debug("Saving json file: %s", file_path)
     try:
         with open(file_path, "w", encoding="utf-8") as file:
             json.dump(data, file, ensure_ascii=False, indent=4)
@@ -108,7 +110,7 @@ def save_json_file(data, file_path: str):
 
 
 def anonymize_json_data(
-    input_json: list,
+    input_json: list | dict,
     anonymizer: utils.SeededNameAnonymizer,
     categories: Optional[List[str]] = None,
 ):
@@ -129,28 +131,53 @@ def anonymize_json_data(
     dict or list
         The anonymized JSON object.
     """
-    for entry in input_json:
-        for category in categories:
-            if category in entry:
-                original_value = entry[category]
-                anonymized_value = anonymizer.translate(original_value)
-                entry[category] = anonymized_value
+    if isinstance(input_json, dict):
+        input_json = _anonymize_json_dict(input_json, anonymizer, categories)
+    elif isinstance(input_json, list):
+        input_json = _anonymize_json_list(input_json, anonymizer, categories)
 
     return input_json
 
 
-def _get_json_keys(data: dict) -> List[str]:
+def _anonymize_json_dict(input_dict: dict, anonymizer, categories):
+    for key, element in input_dict.items():
+        if isinstance(element, dict):
+            anonymized_value = _anonymize_json_dict(element, anonymizer, categories)
+        elif isinstance(element, list):
+            anonymized_value = _anonymize_json_list(element, anonymizer, categories)
+        elif key in categories:
+            anonymized_value = anonymizer.translate(element)
+        else:
+            anonymized_value = element
+        input_dict[key] = anonymized_value
+    return input_dict
+
+
+def _anonymize_json_list(input_list, anonymizer, categories):
+    for entry in input_list:
+        if isinstance(entry, dict):
+            entry = _anonymize_json_dict(entry, anonymizer, categories)
+        elif isinstance(entry, list):
+            entry = _anonymize_json_list(entry, anonymizer, categories)
+    return input_list
+
+
+def _get_json_keys(data: list | dict) -> List[str]:
     all_keys = set()
+    if isinstance(data, list):
+        # Über alle Einträge in der Liste iterieren
+        for entry in data:
+            if isinstance(
+                entry, dict
+            ):  # Sicherstellen, dass es sich um ein Dictionary handelt
+                all_keys.update(entry.keys())
 
-    # Über alle Einträge in der Liste iterieren
-    for entry in data:
-        if isinstance(
-            entry, dict
-        ):  # Sicherstellen, dass es sich um ein Dictionary handelt
-            all_keys.update(entry.keys())
+    elif isinstance(data, dict):
+        all_keys.update(data.keys())
 
-        # Das Set in eine sortierte Liste umwandeln (für bessere Lesbarkeit)
-        unique_keys_list = sorted(list(all_keys))
+    # Das Set in eine sortierte Liste umwandeln (für bessere Lesbarkeit)
+    unique_keys_list = sorted(list(all_keys))
+
     return unique_keys_list
 
 
@@ -158,7 +185,7 @@ def anonymize_json_file(
     input_json: str,
     output_json: str,
     mapping_output: Path,
-    seed: str,
+    anonymizer: utils.SeededNameAnonymizer,
     categories: Optional[List[str]] = None,
 ):
     """
@@ -186,16 +213,18 @@ def anonymize_json_file(
     """
     data = load_json_file(input_json)
 
+    logger.info("Starting Anonymization of JSON Data")
     if categories:
         prefered_categories = categories
     else:
         prefered_categories = _get_json_keys(data)
-    anonymizer = utils.SeededNameAnonymizer(seed=seed, prefix="ANON_", length=10)
 
     anonymized_data = anonymize_json_data(data, anonymizer, prefered_categories)
 
     utils.save_mapping_json(mapping_output, anonymizer)
     save_json_file(anonymized_data, output_json)
+
+    logger.info("Anonymization finished!")
 
 
 def restore_json_anonymization(
@@ -224,16 +253,48 @@ def restore_json_anonymization(
     json.JSONDecodeError
         If the input file is not a valid JSON.
     """
+    logger.info("Starting Restoration of JSON Data")
+
     data = load_json_file(input_json)
-    mapping_data = utils.load_mapping_json(mapping_input)
+    (
+        _,
+        anon_rev,
+        _,
+        _,
+        _,
+        _,
+        prefix,
+    ) = utils.get_mappings(mapping_input)
 
-    prefix = str(mapping_data.get("prefix", "ANON_") or "ANON_")
+    if isinstance(data, dict):
+        data = _restore_json_dict(data, anon_rev, prefix)
+    elif isinstance(data, list):
+        data = _restore_json_list(data, anon_rev, prefix)
 
-    for element in data:
-        if isinstance(element, dict):
-            for key, value in element.items():
-                if isinstance(value, str) and value.startswith(prefix):
-                    original_value = mapping_data["anon_mapping"].get(value)
-                    if original_value:
-                        element[key] = original_value
     save_json_file(data, output_json)
+
+    logger.info("Restoration finished!")
+
+
+def _restore_json_list(data, anon_rev, prefix):
+    for entry in data:
+        if isinstance(entry, dict):
+            entry = _restore_json_dict(entry, anon_rev, prefix)
+        elif isinstance(entry, list):
+            entry = _restore_json_list(entry, anon_rev, prefix)
+    return data
+
+
+def _restore_json_dict(data, anon_rev, prefix):
+    for key, value in data.items():
+        if isinstance(value, dict):
+            value = _restore_json_dict(value, anon_rev, prefix)
+            continue
+        if isinstance(value, list):
+            value = _restore_json_list(value, anon_rev, prefix)
+            continue
+        if isinstance(value, str) and value.startswith(prefix):
+            original_value = anon_rev.get(value)
+            if original_value:
+                data[key] = original_value
+    return data

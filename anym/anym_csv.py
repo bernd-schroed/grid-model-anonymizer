@@ -100,14 +100,6 @@ def _pick_columns(fieldnames: List[str], requested: Optional[List[str]]) -> List
                 cols.append(norm[c.strip()])
         return cols
 
-    # default: your known header
-    preferred = "Name Ortsnetzstation"
-    norm = {h.strip(): h for h in fieldnames if h}
-    if preferred in fieldnames:
-        return [preferred]
-    if preferred.strip() in norm:
-        return [norm[preferred.strip()]]
-
     # fallback: first column
     return [fieldnames[0]]
 
@@ -183,16 +175,6 @@ def transform_csv_with_mapping(
                 "Keine CSV-Header gefunden – kann keine Spalten auswählen."
             )
 
-        preferred_fw_col = "Schalter mit Fernwirkanschluss"
-
-        fw_col = None
-        if fieldnames:
-            norm = {h.strip(): h for h in fieldnames if h}
-            if preferred_fw_col in fieldnames:
-                fw_col = preferred_fw_col
-            elif preferred_fw_col.strip() in norm:
-                fw_col = norm[preferred_fw_col.strip()]
-
         rows = []
         for row in reader:
             # 1) Station Names
@@ -205,22 +187,6 @@ def transform_csv_with_mapping(
                 elif mode.lower() == "restore":
                     if val.startswith(prefix):
                         row[col] = anon_rev.get(val, val)
-
-            # 2) Fernwirk-Column: Delete Status + anonymize/restore IDs
-            if fw_col:
-                raw = row.get(fw_col, "") or ""
-                cleaned = _clean_status(raw)
-
-                if mode.lower() == "anonymize":
-                    row[fw_col] = _anonymize_ids_in_text(cleaned, anonymizer)
-
-                elif mode.lower() == "restore":
-
-                    def restore_id(m: re.Match) -> str:
-                        tok = m.group(1)
-                        return anon_rev.get(tok, tok) if tok.startswith(prefix) else tok
-
-                    row[fw_col] = _ID_RE.sub(restore_id, cleaned)
 
             rows.append(row)
 

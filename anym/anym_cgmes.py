@@ -261,11 +261,16 @@ def _anonymize_line_specs(
         # getting the length of the element
         elem_value = float(el.text)
         cur_rdf_id = cgmes_utils.get_parent_rdfinfo(el, cgmes_utils.RDF_ID)
-
-        # length is always set to 1 km
+        alt_factor = utils.get_alteration(
+            anonymizer=anonymizer,
+            name=loc,
+            current_id=cur_rdf_id,
+        )
+        # length is always set altered by the alteeration
         if loc == "Conductor.length":
             mapping[loc] = elem_value
-            el.text = str(1)  # 1km set
+            new_length = elem_value * alt_factor
+            el.text = str(new_length)
             anonymizer.line_mapping.setdefault(
                 cur_rdf_id,
                 mapping,
@@ -274,15 +279,9 @@ def _anonymize_line_specs(
 
         # every other spec is an impedance and is therefore slightly altered
         else:
-            alteration_seed = utils.get_hash_float(
-                seed=anonymizer.seed,
-                tag=f"impedance_alteration_{loc}_{cur_rdf_id}",
-            )
-            alteration_factor = 1.0 + (alteration_seed - 0.5) * 0.2
 
-            new_impedance = elem_value * alteration_factor
             mapping[loc] = elem_value
-
+            new_impedance = elem_value * alt_factor
             el.text = str(new_impedance)
 
 
@@ -341,7 +340,8 @@ def _anonymize_rdf(
     # Build remap table for IDs found in this tree
     for old_id in all_ids_before:
         if old_id not in anonymizer.cim_forward:
-            cgmes_utils.remap_id(old_id, seed, anonymizer.cim_forward)
+            new_id = utils.generate_seeded_uuid(old_id, seed)
+            anonymizer.cim_forward[old_id] = new_id
 
     # Apply remaps
     for el in tree.iter():
@@ -397,12 +397,11 @@ def anonymize_cgmes(
     out_path: Path,
     seed: str,
     mapping_out_path: Path,
+    anonymizer: utils.SeededNameAnonymizer,
     *,
     desc: bool = False,
     gps: bool = False,
     remap_ids: bool = False,
-    prefix: str = "ANON_",
-    hash_length: int = 10,
 ) -> None:
     """
     Anonymize a CGMES bundle.
@@ -428,9 +427,6 @@ def anonymize_cgmes(
 
     logger.info("=== anym_cgmes.py: Start Anonymize ===")
 
-    anonymizer = utils.SeededNameAnonymizer(
-        seed=seed, prefix=prefix, length=hash_length
-    )
     gps_transform = utils.build_geo_transform(seed)
 
     with tempfile.TemporaryDirectory() as tmp_str:

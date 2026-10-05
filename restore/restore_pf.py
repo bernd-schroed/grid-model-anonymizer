@@ -271,10 +271,8 @@ def get_all_line_types(objects_dict: Dict[str, object]) -> Dict[str, object]:
             all_types_dict = make_obj_dict(all_types)
             return all_types_dict
 
-    raise AttributeError(
-        "The current project does not use any '.TypLne' ",
-        "Objects. Line Type restoring is not possible",
-    )
+    logger.info("No Line Type Setting was executed. No Resetting Necessary")
+    return
 
 
 def restore_line_type(
@@ -293,31 +291,33 @@ def restore_line_type(
     """
 
     all_types = get_all_line_types(objects_dict)
+    try:
+        for ln_type_key, ln_type_obj in all_types.items():
 
-    for ln_type_key, ln_type_obj in all_types.items():
+            if ln_type_key.endswith("LineType.TypLne"):
 
-        if ln_type_key.endswith("LineType.TypLne"):
+                # get all the data about the line and line type
+                anon_line_name = ln_type_key[:15]
 
-            # get all the data about the line and line type
-            anon_line_name = ln_type_key[:15]
+                line_map_key = ln_type_key[:23]
+                orig_type = line_map[line_map_key]
 
-            line_map_key = ln_type_key[:23]
-            orig_type = line_map[line_map_key]
+                anon_line_key = anon_line_name + ".ElmLne"
+                line_obj = objects_dict[anon_line_key]
 
-            anon_line_key = anon_line_name + ".ElmLne"
-            line_obj = objects_dict[anon_line_key]
+                orig_type_key = orig_type["name"] + ".TypLne"
+                orig_type_obj = all_types[orig_type_key]
 
-            orig_type_key = orig_type["name"] + ".TypLne"
-            orig_type_obj = all_types[orig_type_key]
+                orig_length = orig_type["length"]
 
-            orig_length = orig_type["length"]
+                # reset the line information
+                pf_utils.safe_set(line_obj, "dline", float(orig_length), verbose=False)
+                pf_utils.safe_set(line_obj, "typ_id", orig_type_obj, verbose=False)
 
-            # reset the line information
-            pf_utils.safe_set(line_obj, "dline", float(orig_length), verbose=False)
-            pf_utils.safe_set(line_obj, "typ_id", orig_type_obj, verbose=False)
-
-            # delete the anon now unused line object
-            ln_type_obj.Delete()
+                # delete the anon now unused line object
+                ln_type_obj.Delete()
+    except AttributeError:
+        pass
 
 
 def restore_gps_from_anonymization(
@@ -522,6 +522,7 @@ def run_powerfactory_restore(
     in_path: Path,
     out_path: Path,
     mapping_path: Path,
+    project_name: str = None,
 ):
     """
     Import PFD -> restore from JSON -> export PFD
@@ -547,7 +548,8 @@ def run_powerfactory_restore(
     if not mapping_path.exists():
         raise FileNotFoundError(mapping_path)
 
-    project_name = in_path.stem
+    if project_name is None:
+        project_name = in_path.stem
 
     pf_utils.delete_project_if_exists(app, project_name)
     pf_utils.import_pfd_into_current_user(app, in_path)

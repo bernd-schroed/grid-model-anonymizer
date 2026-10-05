@@ -111,7 +111,6 @@ def _restore_gps(
     Check tree if elements applies to GPS Data, and set it to the old data
     """
     gps_buckets: Dict[str, Dict[str, etree._Element]] = {}
-    gps_key_by_elem_id: Dict[int, str] = {}
 
     for el in tree.iter():
         loc = cgmes_utils.local(el.tag)
@@ -123,13 +122,9 @@ def _restore_gps(
         if parent is None:
             continue
 
-        pid = id(parent)
-        if pid not in gps_key_by_elem_id:
-            raw_id = parent.get(cgmes_utils.RDF_ID) or cgmes_utils.strip_hash(
-                parent.get(cgmes_utils.RDF_ABOUT) or ""
-            )
-            gps_key_by_elem_id[pid] = raw_id if raw_id else str(pid)
-        key = gps_key_by_elem_id[pid]
+        key = parent.get(cgmes_utils.RDF_ID) or cgmes_utils.strip_hash(
+            parent.get(cgmes_utils.RDF_ABOUT) or ""
+        )
 
         # put the element in the gps bucket
         bucket = gps_buckets.setdefault(key, {})
@@ -150,9 +145,9 @@ def _restore_gps(
         x_el = bucket.get("x_el")
         y_el = bucket.get("y_el")
         if x_el is not None:
-            x_el.text = f"{old_lon:.6f}"
+            x_el.text = f"{old_lon}"
         if y_el is not None:
-            y_el.text = f"{old_lat:.6f}"
+            y_el.text = f"{old_lat}"
 
 
 def _restore_line_length(
@@ -169,9 +164,13 @@ def _restore_line_length(
         if loc not in cgmes_utils.LINE_SPECS_LOCALS:
             continue
         # getting the length of the element
-        rdf_id = cgmes_utils.get_parent_rdfinfo(el, cgmes_utils.RDF_ID)
-        orig_value = float(line_map[rdf_id][loc])
-        el.text = str(orig_value)
+        try:
+            rdf_id = cgmes_utils.get_parent_rdfinfo(el, cgmes_utils.RDF_ID)
+            orig_value = float(line_map[rdf_id][loc])
+        except KeyError:
+            if el.base.endswith("SC_.xml"):
+                continue
+        el.text = utils.format_float(orig_value)
 
 
 def _restore_time(

@@ -310,13 +310,14 @@ def set_impedances(
             return
 
         # set the alteration
-        alteration_seed = utils.get_hash_float(
-            seed=anonymizer.seed,
-            tag=f"impedance_alteration_{impedance_type}_{ln_name}",
+        alteration = utils.get_alteration(
+            anonymizer=anonymizer,
+            name=impedance_type,
+            current_id=ln_name,
         )
-        alteration_factor = 1.0 + (alteration_seed - 0.5) * 0.2
 
-        new_impedance_per_km = impedance_value_per_km * ratio * alteration_factor
+        new_impedance_per_km = impedance_value_per_km * alteration * ratio
+
         pf_utils.safe_set(
             new_type, impedance_type, float(new_impedance_per_km), verbose=False
         )
@@ -342,29 +343,42 @@ def set_line_length(obj: object, anonymizer: utils.SeededNameAnonymizer) -> None
     old_len = pf_utils.get_float_attr(obj, "dline")
     if old_len is None:
         return
-    if old_len == 1 or old_len == 0:
-        return
 
     # create the new line type from old one
     ln_type = obj.GetType()
     ln_name = pf_utils.get_loc_name(ln_type)
-    new_type = create_new_line_type(ln_type, new_name)
+    try:
+        new_type = create_new_line_type(ln_type, new_name)
 
-    # reset the impedance, since the new line length is always 1 km the ratio = old length
-    impedance_ratio = old_len / 1
-    set_impedances(ln_type, new_type, impedance_ratio, anonymizer, ln_name)
+        alteration = utils.get_alteration(
+            anonymizer=anonymizer,
+            name="length",
+            current_id=ln_name,
+        )
+        new_length = old_len * alteration
+        ratio = old_len / new_length
+        # reset the impedance, since the new line length is always 1 km the ratio = old length
+        set_impedances(
+            ln_type,
+            new_type,
+            ratio,
+            anonymizer,
+            ln_name,
+        )
 
-    # save the new line in the anonymizer
-    anonymizer.line_mapping.setdefault(
-        new_name,
-        {
-            "name": ln_name,
-            "length": old_len,
-        },
-    )
-    # reset the line data
-    pf_utils.safe_set(obj, "dline", float(1), verbose=False)
-    pf_utils.safe_set(obj, "typ_id", new_type, verbose=False)
+        # save the new line in the anonymizer
+        anonymizer.line_mapping.setdefault(
+            new_name,
+            {
+                "name": ln_name,
+                "length": old_len,
+            },
+        )
+        # reset the line data
+        pf_utils.safe_set(obj, "dline", new_length, verbose=False)
+        pf_utils.safe_set(obj, "typ_id", new_type, verbose=False)
+    except AttributeError as e:
+        raise AttributeError from e
 
 
 def create_new_line_type(old_type, new_name: str):
@@ -383,8 +397,11 @@ def create_new_line_type(old_type, new_name: str):
     new_type : line type object
         The new line type
     """
-    parent = old_type.GetParent()
-    new_type = parent.AddCopy(old_type, new_name)
+    try:
+        parent = old_type.GetParent()
+        new_type = parent.AddCopy(old_type, new_name)
+    except AttributeError as e:
+        raise AttributeError from e
     return new_type
 
 
@@ -416,11 +433,11 @@ def anonymize_objects(
     app,
     objects: List,
     seed: str,
+    anonymizer: utils.SeededNameAnonymizer,
     desc: bool,
     gps: bool,
-    prefix: str = "ANON_",
-    length: int = 10,
-) -> utils.SeededNameAnonymizer:
+    remap_ids: bool,
+) -> None:
     """
     Anonymize a collected list of PF objects in place and return the mapping.
 
@@ -454,7 +471,6 @@ def anonymize_objects(
         study-case times), ready to be persisted via
         `utils.save_mapping_json`.
     """
-    anonymizer = utils.SeededNameAnonymizer(seed=seed, prefix=prefix, length=length)
     gps_transform = utils.build_geo_transform(seed)
 
     # Store original keys for the second pass:
@@ -505,8 +521,8 @@ def anonymize_objects(
                 empty_as_zero=True,
             )
 
-            # If you want to anonymize cimRdfId too, uncomment:
-            # anonymize_cim_rdf_id(obj, seed, anonymizer)
+            if remap_ids:
+                anonymize_cim_rdf_id(obj, seed, anonymizer)
 
             pf_utils.sanitize_desc(obj, desc, anonymizer)
 
@@ -556,12 +572,14 @@ def anonymize_objects(
                 orig_cim_id=orig_cim,
                 orig_loc_name_for_jitter=orig_loc,
             )
-
-            set_line_length(obj, anonymizer=anonymizer)
+        for obj in objects:
+            try:
+                set_line_length(obj, anonymizer=anonymizer)
+            except AttributeError:
+                logger.warning("No Line Setting possible! Impedance Alteration skipped")
+                break
     finally:
         pf_utils.pf_bulk_mode_end(app)
-
-    return anonymizer
 
 
 # ----------------------------
@@ -574,8 +592,8 @@ def run_powerfactory_import_export(
     mapping_out_path: Path,
     desc: bool,
     gps: bool,
-    prefix: str = "ANON_",
-    hash_length: int = 10,
+    remap_ids: bool,
+    anonymizer: utils.SeededNameAnonymizer,
 ):
     """
     End-to-end PF anonymization: import .pfd -> anonymize -> export .pfd.
@@ -657,14 +675,14 @@ def run_powerfactory_import_export(
     objects = pf_utils.collect_unique_objects_for_anonymization(app)
     logger.info("Objects to anonymize (unique): %d", len(objects))
 
-    anonymizer = anonymize_objects(
+    anonymize_objects(
         app=app,
         objects=objects,
         seed=random_seed,
+        anonymizer=anonymizer,
         desc=desc,
         gps=gps,
-        prefix=prefix,
-        length=hash_length,
+        remap_ids=remap_ids,
     )
 
     utils.save_mapping_json(mapping_out_path, anonymizer)
@@ -678,3 +696,68 @@ def run_powerfactory_import_export(
         logger.warning("Export not executed: %s", e)
     except RuntimeError as e:
         logger.error("Export failed: %s", e)
+    try:
+        check_load_flow_accuracy(
+            in_path, out_path, mapping_out_path, anonymizer.alteration_factor
+        )
+    except AttributeError as e:
+        logger.error("Load flow Analysis not possible. Error Message: %s", e)
+
+
+def check_load_flow_accuracy(
+    orig_path: Path, anym_path: Path, mapping_out_path: Path, alt_factor: float
+):
+    """Checks if the load flow results of the original and anonymized project are within the
+    expected range. Give a warning if the averaged error is larger than 1% and log the maximum
+    deviation of the load flow results.
+    """
+    (
+        _,
+        anon_rev,
+        _,
+        _,
+        _,
+        _,
+        prefix,
+    ) = utils.get_mappings(mapping_out_path)
+
+    app = pf.GetApplication()
+    orig_ldf_results = pf_utils.get_load_flow_results(app, orig_path, anon_rev, prefix)
+    anym_ldf_results = pf_utils.get_load_flow_results(
+        app, anym_path, anon_rev, prefix, project_name=orig_path.stem
+    )
+
+    difference_list = []
+    for type_key, type_entry in orig_ldf_results.items():
+        for elem_key, elem_entry in type_entry.items():
+
+            for value_key, orig_value_entry in elem_entry.items():
+                anym_value_entry = anym_ldf_results[type_key][elem_key][value_key]
+                try:
+                    rel_error = (orig_value_entry - anym_value_entry) / orig_value_entry
+                except ZeroDivisionError:
+                    rel_error = orig_value_entry - anym_value_entry
+                difference_list.append(rel_error)
+
+    square_error = [x**2 for x in difference_list]
+    mean_square_error = sum(square_error) / len(square_error)
+
+    rmse = math.sqrt(mean_square_error)
+    max_error = math.sqrt(max(square_error))
+    logger.info(
+        "The maximum deviation of the load flow results is %0.2f%% in one of the elements, "
+        "the Alteration Factor is at %s%%.",
+        max_error * 100,
+        alt_factor,
+    )
+    if rmse >= 1 / 100:
+        logger.warning(
+            "The averaged error for load flow analysis is larger than 1%% with %0.2f%%! "
+            "Use a smaller alteration factor to reduce the error.",
+            rmse * 100,
+        )
+    else:
+        logger.warning(
+            "The averaged error for a load flow analysis is at %0.2f%%!",
+            rmse * 100,
+        )
