@@ -716,6 +716,8 @@ def check_load_flow_accuracy(
         for elem_key, elem_entry in type_entry.items():
 
             for value_key, orig_value_entry in elem_entry.items():
+                if anym_ldf_results[type_key][elem_key] == "Unknown":
+                    continue
                 anym_value_entry = anym_ldf_results[type_key][elem_key][value_key]
                 try:
                     rel_error = (orig_value_entry - anym_value_entry) / orig_value_entry
