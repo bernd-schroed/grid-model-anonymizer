@@ -283,7 +283,7 @@ def get_plot_data(load_flow_results, object_type="lines", data_type="loading"):
         factor = load_flow_result["factor"]
         anym_object = load_flow_result["anym"][object_type]
         orig_object = load_flow_result["orig"][object_type]
-        object_data.update({factor: []})
+        object_data.update({f"Factor: {factor}": []})
         for obj in objects:
             if data_type == "deg":
                 object_data["orig"] = [0] * len(objects)
@@ -294,8 +294,8 @@ def get_plot_data(load_flow_results, object_type="lines", data_type="loading"):
                 object_alteration = (
                     anym_object[obj][data_type] / orig_object[obj][data_type] * 100
                 )
-            object_data[factor].append(object_alteration)
-        object_data[factor] = tuple(object_data[factor])
+            object_data[f"Factor: {factor}"].append(object_alteration)
+        object_data[f"Factor: {factor}"] = tuple(object_data[f"Factor: {factor}"])
     return object_data, objects
 
 
@@ -303,6 +303,7 @@ def plot_specs(fig, ax, ymin, ymax):
     ax.set_ylim(ymin - 0.05, ymax + 0.05)
     ax.grid()
     ax.legend()
+    ax.tick_params("x", rotation=45, rotation_mode="xtick")
 
 
 def line_plots(load_flow_results):
@@ -316,8 +317,8 @@ def line_plots(load_flow_results):
     line_fig, line_ax = plt.subplots()
     line_ax.grouped_bar(line_data, tick_labels=lines)
     plot_specs(line_fig, line_ax, ymin, ymax)
-    line_ax.set_title("Line Loading for Different Alteration Factors")
-    line_ax.set_ylabel("Loading [%]")
+    line_ax.set_title("Difference in Line Loading for Different Alteration Factors")
+    line_ax.set_ylabel("Loading p.u. [%]")
 
     plt.show()
 
@@ -335,9 +336,22 @@ def buss_plots(load_flow_results):
     bus_fig, bus_ax = plt.subplots()
     bus_ax.grouped_bar(buss_voltage_data, tick_labels=busses)
 
-    bus_ax.set_title("Line Loading for Different Alteration Factors")
-    bus_ax.set_ylabel("Loading [%]")
+    bus_ax.set_title("Difference in Bus Voltage for different alteration factors")
+    bus_ax.set_ylabel("Voltage p.u. [%]")
     plot_specs(bus_fig, bus_ax, ymin, ymax)
+    plt.show()
+
+    ymax = max([max(x) for x in buss_degree_data.values()])
+    ymin = min([min(x) for x in buss_degree_data.values()])
+
+    bus_deg_fig, bus_deg_ax = plt.subplots()
+    bus_deg_ax.grouped_bar(buss_degree_data, tick_labels=busses)
+
+    bus_deg_ax.set_title(
+        "Difference in Bus Voltage Angles for different alteration factors"
+    )
+    bus_deg_ax.set_ylabel("Angle Diffeence [°]")
+    plot_specs(bus_deg_fig, bus_deg_ax, ymin, ymax)
     plt.show()
 
 
@@ -351,73 +365,11 @@ def generator_plots(load_flow_results):
     gen_fig, gen_ax = plt.subplots()
     gen_ax.grouped_bar(generator_data, tick_labels=generators)
 
-    gen_ax.set_title("Line Loading for Different Alteration Factors")
-    gen_ax.set_ylabel("Loading [%]")
+    gen_ax.set_title("Difference in Generator Loading for different alteration factors")
+    gen_ax.set_ylabel("Loading p.u. [%]")
     plot_specs(gen_fig, gen_ax, ymin, ymax)
 
     plt.show()
-
-
-# def print_snapshot_of_grid(
-#     strng_graphic_name, obj_substat=None, state_indx: int = 0, scaling_fac=1
-# ):
-#     """
-#     Takes a snapshot of the current switching state and exports it as pdf file.
-
-#     Input:
-#     - strng_graphic_name: string name of the graphic that is to be exported including
-#           the graphic ending ".IntGrfnet" (e.g. "D2.IntGrfnet")
-#     - obj_substat: pf object of the substation, if not given, the entire diagram is exported.
-#     - scaling_fac: factor to adjust scaling of the pdf print (for large zones a scaling factor
-#           between >1-2 is appropriate)
-
-#     """
-#     # get active project
-#     o_active_project = self.app.GetActiveProject()
-#     o_active_project.GetContents()
-#     # get networkmodel folder
-#     network_model = o_active_project.GetContents("Network Model.IntPrjfolder")
-#     # get write command for saving diagrams as e.g. pdf
-#     comWr = self.app.GetFromStudyCase("ComWr")
-#     # get the correct diagram
-#     diagrams = network_model[0].GetContents("Diagrams.IntPrjfolder")
-#     diagrams_contents_D2 = diagrams[0].GetContents(strng_graphic_name)
-#     diagrams_contents_D2[0].Show()
-#     # define save settings
-#     comWr = self.app.GetFromStudyCase("ComWr")
-#     comWr.SetAttribute("iopt_rd", "pdf")
-#     comWr.SetAttribute("iopt_savas", 0)
-#     # get scaling factor
-#     scaling_fac = self._determine_scaling_for_pdf(self.substats_zone)
-#     # if no substation object is given, set initial substation as default
-#     if obj_substat == None:
-#         obj_substat = self.inital_substat
-#     # if given, define selection of the graphic according to given substation
-#     if obj_substat != None:
-#         str_name_site = obj_substat.GetParent().loc_name
-#         # get graphical object of substation object
-#         for i in obj_substat.GetParent().GetReferences():
-#             if i.GetParent().loc_name == "D2":
-#                 graphic_obj = i
-#         # get x and y coordinates of site element
-#         x_coordinate = graphic_obj.rCenterX
-#         y_coordinate = graphic_obj.rCenterY
-#         # define subregion to export selection of graphical diagram
-#         comWr.exportSubregion = 1
-#         # convertion of the objects coordinates to coordinates for the grid
-#         # Note: for some reason scaling with *10000 is required to set the comWr
-#                   attributes correctly
-#         comWr.regionTop = y_coordinate - scaling_fac * 1000
-#         comWr.regionBottom = y_coordinate + scaling_fac * 1000
-#         comWr.regionRight = x_coordinate + scaling_fac * 1000
-#         comWr.regionLeft = x_coordinate - scaling_fac * 1000
-
-#     # define path and execute pdf export
-#     comWr.SetAttribute(
-#         "f",
-#         f"Auswertung\zone_{str_name_site}\graphics\graphic_{str_name_site}_state_index{state_indx}.pdf",
-#     )
-#     comWr.Execute()
 
 
 if __name__ == "__main__":
