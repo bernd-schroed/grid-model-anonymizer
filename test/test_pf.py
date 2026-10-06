@@ -229,21 +229,21 @@ def get_load_flow_diff_plots():
 
     seed = "test_seed"
     paths = [
-        "Nine Bus System",
+        "Nine-bus System",
         "14 Bus System(1)",
-        "LV Distribution Network",
         "39 Bus New England System",
     ]
     alt_factors = [0, 1, 3, 5, 10]
 
     load_flow_results = {}
-    app = pf.GetApplication()
+
     for path in paths:
         load_flow_results[path] = {}
 
         orig_path, anym_path, _, mapping_path = utils.get_test_files(
             path, ".pfd", "PowerFactory", []
         )
+        app = pf.GetApplication()
         orig_ldf_results = pf_utils.get_load_flow_results(
             app, orig_path, anon_rev=None, prefix="Anon_"
         )
