@@ -539,6 +539,9 @@ def get_alteration(
     name: str,
     current_id: str,
 ):
+    """
+    Get the alteration factor for a given name and id. The alteration factor is a random number
+    """
     random_alteration = get_hash_float(
         seed=anonymizer.seed,
         tag=f"impedance_alteration_{name}_{current_id}",

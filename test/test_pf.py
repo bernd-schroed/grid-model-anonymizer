@@ -3,7 +3,6 @@
 import itertools
 import logging
 import math
-import sys
 from pathlib import Path
 from typing import Dict
 
@@ -11,7 +10,6 @@ import matplotlib.pyplot as plt
 import pytest
 from matplotlib.patches import Patch
 
-sys.path.append(".")
 from anym import anym_pf
 from restore import restore_pf
 from utils import pf_utils, utils
@@ -189,6 +187,10 @@ def test_powerfactory_load_flow_accuracy(path, alt_factor_percent):
 def load_flow_asserts(
     orig_ldf_results, anym_ldf_results, alt_factor, project_name
 ) -> float:
+    """Go through all the results of the load flow and calculate the relative error
+    between the original and anonymized results. give out the maximum error and the
+    root mean square error (RMSE) of the load flow results.
+    """
     difference_list = []
     for type_key, type_entry in orig_ldf_results.items():
         for elem_key, elem_entry in type_entry.items():
@@ -210,11 +212,13 @@ def load_flow_asserts(
         f.write(f"Current Network: {project_name} \n")
 
         f.write(
-            f"The maximum deviation of the load flow results is {max_error*100:.2f}% in one of the elements, the Alteration Factor is at {alt_factor:.0f}%.\n",
+            f"The maximum deviation of the load flow results is {max_error*100:.2f}% "
+            f"in one of the elements, the Alteration Factor is at {alt_factor:.0f}%.\n",
         )
         if rmse >= 1 / 100:
             f.write(
-                f"The averaged error for load flow analysis is larger than 1% with {rmse *100:.2f}%! Use a smaller alteration factor to reduce the error.\n",
+                f"The averaged error for load flow analysis is larger than 1% with "
+                f"{rmse *100:.2f}%! Use a smaller alteration factor to reduce the error.\n",
             )
         else:
             f.write(

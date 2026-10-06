@@ -695,6 +695,10 @@ def run_powerfactory_import_export(
 def check_load_flow_accuracy(
     orig_path: Path, anym_path: Path, mapping_out_path: Path, alt_factor: float
 ):
+    """Checks if the load flow results of the original and anonymized project are within the
+    expected range. Give a warning if the averaged error is larger than 1% and log the maximum
+    deviation of the load flow results.
+    """
     (
         _,
         anon_rev,
@@ -731,13 +735,15 @@ def check_load_flow_accuracy(
     rmse = math.sqrt(mean_square_error)
     max_error = math.sqrt(max(square_error))
     logger.info(
-        "The maximum deviation of the load flow results is %0.2f%% in one of the elements, the Alteration Factor is at %s%%.",
+        "The maximum deviation of the load flow results is %0.2f%% in one of the elements, "
+        "the Alteration Factor is at %s%%.",
         max_error * 100,
         alt_factor,
     )
     if rmse >= 1 / 100:
         logger.warning(
-            "The averaged error for load flow analysis is larger than 1%% with %0.2f%%! Use a smaller alteration factor to reduce the error.",
+            "The averaged error for load flow analysis is larger than 1%% with %0.2f%%! "
+            "Use a smaller alteration factor to reduce the error.",
             rmse * 100,
         )
     else:
