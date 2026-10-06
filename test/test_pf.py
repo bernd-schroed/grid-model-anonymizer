@@ -283,6 +283,7 @@ def get_load_flow_diff_plots():
             utils.delete_test_data([anym_path, mapping_path])
 
     # ------------------------------ Courtesy of Claude -----------------------
+    # data type -> (title, y-label, category in JSON, value key)
     TYPES = {
         "generator_loading": (
             "Generator Loading",
@@ -295,6 +296,14 @@ def get_load_flow_diff_plots():
         "bus_angle": ("Bus Angle", "Δ Angle [°]", "busses", "deg"),
     }
 
+    # Scale factors to per unit (used only for the "all data" plot):
+    # loading [%] -> p.u. (/100), voltage is already p.u., angle [°] -> rad
+    PU_SCALE = {
+        "generators": {"loading": 1 / 100},
+        "lines": {"loading": 1 / 100},
+        "busses": {"u": 1.0, "deg": math.pi / 180},
+    }
+
     colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
 
     def deviations(project, factor, category, key):
@@ -303,7 +312,7 @@ def get_load_flow_diff_plots():
         fac = load_flow_results[project][factor][category]
         return [fac[name][key] - orig[name][key] for name in orig]
 
-    def plot(types, title, ylabel, filename):
+    def plot(types, title, ylabel, filename, to_pu=False):
         fig, ax = plt.subplots(figsize=(12, 5))
         pos = 0
         group_centers, group_names = [], []
@@ -314,7 +323,10 @@ def get_load_flow_diff_plots():
             for i, factor in enumerate(factors):
                 vals = []
                 for category, key in types:
-                    vals += deviations(project, factor, category, key)
+                    scale = PU_SCALE[category][key] if to_pu else 1.0
+                    vals += [
+                        v * scale for v in deviations(project, factor, category, key)
+                    ]
                 bp = ax.boxplot(vals, positions=[pos], widths=0.8, patch_artist=True)
                 bp["boxes"][0].set_facecolor(colors[i % len(colors)])
                 for m in bp["medians"]:
@@ -371,8 +383,9 @@ def get_load_flow_diff_plots():
     plot(
         [(c, k) for _, _, c, k in TYPES.values()],
         "Deviation from original: all data types",
-        "Δ (mixed units)",
+        "Δ [p.u.]",
         "all_data.png",
+        to_pu=True,
     )
 
 
