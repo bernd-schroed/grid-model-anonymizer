@@ -9,6 +9,7 @@ from typing import Dict
 
 import matplotlib.pyplot as plt
 import pytest
+from matplotlib.patches import Patch
 
 sys.path.append(".")
 from anym import anym_pf
@@ -281,10 +282,101 @@ def get_load_flow_diff_plots():
             load_flow_results[path][f"Factor: {alt_factor}"] = anym_ldf_results
             utils.delete_test_data([anym_path, mapping_path])
 
-    line_plots(load_flow_results, path)
-    buss_plots(load_flow_results, path)
-    generator_plots(load_flow_results, path)
-    print("done")
+    # ------------------------------ Courtesy of Claude -----------------------
+    TYPES = {
+        "generator_loading": (
+            "Generator Loading",
+            "Δ Loading [%]",
+            "generators",
+            "loading",
+        ),
+        "line_loading": ("Line Loading", "Δ Loading [%]", "lines", "loading"),
+        "bus_voltage": ("Bus Voltage", "Δ Voltage [p.u.]", "busses", "u"),
+        "bus_angle": ("Bus Angle", "Δ Angle [°]", "busses", "deg"),
+    }
+
+    colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
+
+    def deviations(project, factor, category, key):
+        """Deviation (factor - orig) per element of a project."""
+        orig = load_flow_results[project]["orig"][category]
+        fac = load_flow_results[project][factor][category]
+        return [fac[name][key] - orig[name][key] for name in orig]
+
+    def plot(types, title, ylabel, filename):
+        fig, ax = plt.subplots(figsize=(12, 5))
+        pos = 0
+        group_centers, group_names = [], []
+        factor_names = []
+        for project, runs in load_flow_results.items():
+            factors = [k for k in runs if k != "orig"]
+            start = pos
+            for i, factor in enumerate(factors):
+                vals = []
+                for category, key in types:
+                    vals += deviations(project, factor, category, key)
+                bp = ax.boxplot(vals, positions=[pos], widths=0.8, patch_artist=True)
+                bp["boxes"][0].set_facecolor(colors[i % len(colors)])
+                for m in bp["medians"]:
+                    m.set_color("black")
+                if factor not in factor_names:
+                    factor_names.append(factor)
+                pos += 1
+            group_centers.append((start + pos - 1) / 2)
+            group_names.append(project)
+            pos += 1  # gap between project groups
+
+        ax.set_xticks(group_centers)
+        ax.set_xticklabels(group_names)
+        ax.set_xlabel("Original project")
+        ax.set_ylabel(ylabel)
+        ax.set_title(title)
+        ax.axhline(0, color="gray", linewidth=0.8, linestyle="--")
+        ax.grid(axis="y", alpha=0.3)
+
+        # light legend: outside the plot, no frame, small font
+        ax.legend(
+            handles=[
+                Patch(
+                    facecolor=colors[i % len(colors)],
+                    edgecolor="black",
+                    linewidth=0.8,
+                    label=f.replace("Factor: ", ""),
+                )
+                for i, f in enumerate(factor_names)
+            ],
+            title="Factor",
+            loc="upper left",
+            bbox_to_anchor=(1.01, 1),
+            frameon=False,
+            fontsize=9,
+            title_fontsize=9,
+            handlelength=1.0,
+            handleheight=1.0,
+        )
+        fig.tight_layout()
+        fig.savefig(filename, dpi=150)
+        plt.close(fig)
+
+    # One image per data type
+    for name, (title, ylabel, category, key) in TYPES.items():
+        plot(
+            [(category, key)],
+            f"Deviation from original: {title}",
+            ylabel,
+            f"{name}.png",
+        )
+
+    # One image over all data
+    plot(
+        [(c, k) for _, _, c, k in TYPES.values()],
+        "Deviation from original: all data types",
+        "Δ (mixed units)",
+        "all_data.png",
+    )
+
+
+# ------------------------------ Courtesy of Claude -----------------------
 
 
 def get_plot_data(load_flow_results, object_type="lines", data_type="loading"):
