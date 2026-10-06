@@ -223,55 +223,67 @@ def load_flow_asserts(
 
 
 def get_load_flow_diff_plots():
-    path = "Nine-bus System"
+
     if pf_utils.get_pf_version() is False:
         pytest.skip("No PowerFactory installed")
-    orig_path, anym_path, _, mapping_path = utils.get_test_files(
-        path, ".pfd", "PowerFactory", []
-    )
 
     seed = "test_seed"
+    paths = [
+        "Nine Bus System",
+        "14 Bus System(1)",
+        "LV Distribution Network",
+        "39 Bus New England System",
+    ]
     alt_factors = [0, 1, 3, 5, 10]
-    load_flow_results = [{"factor": alt_factor} for alt_factor in alt_factors]
-    for alt_factor, load_flow_result in zip(alt_factors, load_flow_results):
 
-        anonymizer = utils.SeededNameAnonymizer(seed=seed, alteration_factor=alt_factor)
+    load_flow_results = {}
+    app = pf.GetApplication()
+    for path in paths:
+        load_flow_results[path] = {}
 
-        anym_pf.run_powerfactory_import_export(
-            in_path=orig_path,
-            out_path=anym_path,
-            random_seed=seed,
-            mapping_out_path=mapping_path,
-            desc=False,
-            gps=False,
-            remap_ids=False,
-            anonymizer=anonymizer,
+        orig_path, anym_path, _, mapping_path = utils.get_test_files(
+            path, ".pfd", "PowerFactory", []
         )
-        (
-            _,
-            anon_rev,
-            _,
-            _,
-            _,
-            _,
-            prefix,
-        ) = utils.get_mappings(mapping_path)
-
-        app = pf.GetApplication()
-
         orig_ldf_results = pf_utils.get_load_flow_results(
-            app, orig_path, anon_rev, prefix
+            app, orig_path, anon_rev=None, prefix="Anon_"
         )
-        anym_ldf_results = pf_utils.get_load_flow_results(
-            app, anym_path, anon_rev, prefix
-        )
-        load_flow_result["orig"] = orig_ldf_results
-        load_flow_result["anym"] = anym_ldf_results
-        utils.delete_test_data([anym_path, mapping_path])
+        load_flow_results[path]["orig"] = orig_ldf_results
+        for alt_factor in alt_factors:
 
-    line_plots(load_flow_results)
-    buss_plots(load_flow_results)
-    generator_plots(load_flow_results)
+            anonymizer = utils.SeededNameAnonymizer(
+                seed=seed, alteration_factor=alt_factor
+            )
+
+            anym_pf.run_powerfactory_import_export(
+                in_path=orig_path,
+                out_path=anym_path,
+                random_seed=seed,
+                mapping_out_path=mapping_path,
+                desc=False,
+                gps=False,
+                remap_ids=False,
+                anonymizer=anonymizer,
+            )
+            (
+                _,
+                anon_rev,
+                _,
+                _,
+                _,
+                _,
+                prefix,
+            ) = utils.get_mappings(mapping_path)
+
+            anym_ldf_results = pf_utils.get_load_flow_results(
+                app, anym_path, anon_rev, prefix
+            )
+
+            load_flow_results[path][f"Factor: {alt_factor}"] = anym_ldf_results
+            utils.delete_test_data([anym_path, mapping_path])
+
+    line_plots(load_flow_results, path)
+    buss_plots(load_flow_results, path)
+    generator_plots(load_flow_results, path)
     print("done")
 
 
@@ -299,14 +311,15 @@ def get_plot_data(load_flow_results, object_type="lines", data_type="loading"):
     return object_data, objects
 
 
-def plot_specs(fig, ax, ymin, ymax):
-    ax.set_ylim(ymin - 0.05, ymax + 0.05)
+def plot_specs(fig, ax, ymin, ymax, default=100):
+    ax.set_ylim(ymin - (default - ymin) / 4, ymax + (ymax - default) / 4)
     ax.grid()
     ax.legend()
     ax.tick_params("x", rotation=45, rotation_mode="xtick")
+    fig.set_size_inches(17.5, 10.5)
 
 
-def line_plots(load_flow_results):
+def line_plots(load_flow_results, path):
 
     line_data, lines = get_plot_data(
         load_flow_results, object_type="lines", data_type="loading"
@@ -320,10 +333,11 @@ def line_plots(load_flow_results):
     line_ax.set_title("Difference in Line Loading for Different Alteration Factors")
     line_ax.set_ylabel("Loading p.u. [%]")
 
-    plt.show()
+    # plt.show()
+    line_fig.savefig(f"{path}_line_loading_plot.png", dpi=300)
 
 
-def buss_plots(load_flow_results):
+def buss_plots(load_flow_results, path):
     buss_voltage_data, busses = get_plot_data(
         load_flow_results, object_type="busses", data_type="u"
     )
@@ -339,7 +353,8 @@ def buss_plots(load_flow_results):
     bus_ax.set_title("Difference in Bus Voltage for different alteration factors")
     bus_ax.set_ylabel("Voltage p.u. [%]")
     plot_specs(bus_fig, bus_ax, ymin, ymax)
-    plt.show()
+    # plt.show()
+    bus_fig.savefig(f"{path}_bus_voltage_plot.png", dpi=300)
 
     ymax = max([max(x) for x in buss_degree_data.values()])
     ymin = min([min(x) for x in buss_degree_data.values()])
@@ -351,11 +366,12 @@ def buss_plots(load_flow_results):
         "Difference in Bus Voltage Angles for different alteration factors"
     )
     bus_deg_ax.set_ylabel("Angle Diffeence [°]")
-    plot_specs(bus_deg_fig, bus_deg_ax, ymin, ymax)
-    plt.show()
+    plot_specs(bus_deg_fig, bus_deg_ax, ymin, ymax, default=0)
+    # plt.show()
+    bus_deg_fig.savefig(f"{path}_bus_voltage_angle_plot.png", dpi=300)
 
 
-def generator_plots(load_flow_results):
+def generator_plots(load_flow_results, path):
     generator_data, generators = get_plot_data(
         load_flow_results, object_type="generators", data_type="loading"
     )
@@ -368,13 +384,13 @@ def generator_plots(load_flow_results):
     gen_ax.set_title("Difference in Generator Loading for different alteration factors")
     gen_ax.set_ylabel("Loading p.u. [%]")
     plot_specs(gen_fig, gen_ax, ymin, ymax)
-
-    plt.show()
+    gen_fig.savefig(f"{path}_generator_loading_plot.png", dpi=300)
+    # plt.show()
 
 
 if __name__ == "__main__":
     project_dir = Path(__file__).parent.parent.resolve()
     test_dir = Path(project_dir, "test")
     data_dir = Path(test_dir, "test_data", "PowerFactory")
-    the_file = Path(data_dir, "orig", "Nine-bus System.pfd")
+    the_file = Path(data_dir, "orig", "39 Bus New England System.pfd")
     get_load_flow_diff_plots()
