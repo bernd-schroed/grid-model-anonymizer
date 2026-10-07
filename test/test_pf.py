@@ -3,6 +3,7 @@
 import itertools
 import logging
 import math
+import sys
 from pathlib import Path
 from typing import Dict
 
@@ -10,6 +11,7 @@ import matplotlib.pyplot as plt
 import pytest
 from matplotlib.patches import Patch
 
+sys.path.append(str(Path(__file__).parent.parent.resolve()))
 from anym import anym_pf
 from restore import restore_pf
 from utils import pf_utils, utils
@@ -288,7 +290,7 @@ def get_load_flow_diff_plots():
 
     # ------------------------------ Courtesy of Claude -----------------------
     # data type -> (title, y-label, category in JSON, value key)
-    TYPES = {
+    types = {
         "generator_loading": (
             "Generator Loading",
             "Δ Loading [%]",
@@ -302,7 +304,7 @@ def get_load_flow_diff_plots():
 
     # Scale factors to per unit (used only for the "all data" plot):
     # loading [%] -> p.u. (/100), voltage is already p.u., angle [°] -> rad
-    PU_SCALE = {
+    pu_scale = {
         "generators": {"loading": 1 / 100},
         "lines": {"loading": 1 / 100},
         "busses": {"u": 1.0, "deg": math.pi / 180},
@@ -327,7 +329,7 @@ def get_load_flow_diff_plots():
             for i, factor in enumerate(factors):
                 vals = []
                 for category, key in types:
-                    scale = PU_SCALE[category][key] if to_pu else 1.0
+                    scale = pu_scale[category][key] if to_pu else 1.0
                     vals += [
                         v * scale for v in deviations(project, factor, category, key)
                     ]
@@ -375,7 +377,7 @@ def get_load_flow_diff_plots():
         plt.close(fig)
 
     # One image per data type
-    for name, (title, ylabel, category, key) in TYPES.items():
+    for name, (title, ylabel, category, key) in types.items():
         plot(
             [(category, key)],
             f"Deviation from original: {title}",
@@ -385,7 +387,7 @@ def get_load_flow_diff_plots():
 
     # One image over all data
     plot(
-        [(c, k) for _, _, c, k in TYPES.values()],
+        [(c, k) for _, _, c, k in types.values()],
         "Deviation from original: all data types",
         "Δ [p.u.]",
         "all_data.png",
@@ -394,108 +396,6 @@ def get_load_flow_diff_plots():
 
 
 # ------------------------------ Courtesy of Claude -----------------------
-
-
-def get_plot_data(load_flow_results, object_type="lines", data_type="loading"):
-    object_data = {"orig": []}
-    objects = tuple(load_flow_results[0]["orig"][object_type].keys())
-    object_data["orig"] = [100] * len(objects)
-    for load_flow_result in load_flow_results:
-        factor = load_flow_result["factor"]
-        anym_object = load_flow_result["anym"][object_type]
-        orig_object = load_flow_result["orig"][object_type]
-        object_data.update({f"Factor: {factor}": []})
-        for obj in objects:
-            if data_type == "deg":
-                object_data["orig"] = [0] * len(objects)
-                object_alteration = (
-                    orig_object[obj][data_type] - anym_object[obj][data_type]
-                )
-            else:
-                object_alteration = (
-                    anym_object[obj][data_type] / orig_object[obj][data_type] * 100
-                )
-            object_data[f"Factor: {factor}"].append(object_alteration)
-        object_data[f"Factor: {factor}"] = tuple(object_data[f"Factor: {factor}"])
-    return object_data, objects
-
-
-def plot_specs(fig, ax, ymin, ymax, default=100):
-    ax.set_ylim(ymin - (default - ymin) / 4, ymax + (ymax - default) / 4)
-    ax.grid()
-    ax.legend()
-    ax.tick_params("x", rotation=45, rotation_mode="xtick")
-    fig.set_size_inches(17.5, 10.5)
-
-
-def line_plots(load_flow_results, path):
-
-    line_data, lines = get_plot_data(
-        load_flow_results, object_type="lines", data_type="loading"
-    )
-    ymax = max([max(x) for x in line_data.values()])
-    ymin = min([min(x) for x in line_data.values()])
-
-    line_fig, line_ax = plt.subplots()
-    line_ax.grouped_bar(line_data, tick_labels=lines)
-    plot_specs(line_fig, line_ax, ymin, ymax)
-    line_ax.set_title("Difference in Line Loading for Different Alteration Factors")
-    line_ax.set_ylabel("Loading p.u. [%]")
-
-    # plt.show()
-    line_fig.savefig(f"{path}_line_loading_plot.png", dpi=300)
-
-
-def buss_plots(load_flow_results, path):
-    buss_voltage_data, busses = get_plot_data(
-        load_flow_results, object_type="busses", data_type="u"
-    )
-    buss_degree_data, _ = get_plot_data(
-        load_flow_results, object_type="busses", data_type="deg"
-    )
-    ymax = max([max(x) for x in buss_voltage_data.values()])
-    ymin = min([min(x) for x in buss_voltage_data.values()])
-
-    bus_fig, bus_ax = plt.subplots()
-    bus_ax.grouped_bar(buss_voltage_data, tick_labels=busses)
-
-    bus_ax.set_title("Difference in Bus Voltage for different alteration factors")
-    bus_ax.set_ylabel("Voltage p.u. [%]")
-    plot_specs(bus_fig, bus_ax, ymin, ymax)
-    # plt.show()
-    bus_fig.savefig(f"{path}_bus_voltage_plot.png", dpi=300)
-
-    ymax = max([max(x) for x in buss_degree_data.values()])
-    ymin = min([min(x) for x in buss_degree_data.values()])
-
-    bus_deg_fig, bus_deg_ax = plt.subplots()
-    bus_deg_ax.grouped_bar(buss_degree_data, tick_labels=busses)
-
-    bus_deg_ax.set_title(
-        "Difference in Bus Voltage Angles for different alteration factors"
-    )
-    bus_deg_ax.set_ylabel("Angle Diffeence [°]")
-    plot_specs(bus_deg_fig, bus_deg_ax, ymin, ymax, default=0)
-    # plt.show()
-    bus_deg_fig.savefig(f"{path}_bus_voltage_angle_plot.png", dpi=300)
-
-
-def generator_plots(load_flow_results, path):
-    generator_data, generators = get_plot_data(
-        load_flow_results, object_type="generators", data_type="loading"
-    )
-    ymax = max([max(x) for x in generator_data.values()])
-    ymin = min([min(x) for x in generator_data.values()])
-
-    gen_fig, gen_ax = plt.subplots()
-    gen_ax.grouped_bar(generator_data, tick_labels=generators)
-
-    gen_ax.set_title("Difference in Generator Loading for different alteration factors")
-    gen_ax.set_ylabel("Loading p.u. [%]")
-    plot_specs(gen_fig, gen_ax, ymin, ymax)
-    gen_fig.savefig(f"{path}_generator_loading_plot.png", dpi=300)
-    # plt.show()
-
 
 if __name__ == "__main__":
     project_dir = Path(__file__).parent.parent.resolve()
