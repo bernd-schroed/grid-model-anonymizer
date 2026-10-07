@@ -1,8 +1,10 @@
 """Round-trip tests for PowerFactory project anonymization and restoration."""
 
+import csv
 import itertools
 import logging
 import math
+import statistics
 import sys
 from pathlib import Path
 from typing import Dict
@@ -318,7 +320,19 @@ def get_load_flow_diff_plots():
         fac = load_flow_results[project][factor][category]
         return [fac[name][key] - orig[name][key] for name in orig]
 
-    def plot(types, title, ylabel, filename, to_pu=False):
+    def value_range(category, key):
+        """Min/max of all deviations for one data type (with a small margin)."""
+        vals = [
+            v
+            for project, runs in load_flow_results.items()
+            for factor in runs
+            if factor != "orig"
+            for v in deviations(project, factor, category, key)
+        ]
+        margin = 0.05 * (max(vals) - min(vals))
+        return min(vals) - margin, max(vals) + margin
+
+    def plot(types, title, ylabel, filename, to_pu=False, ylim=None):
         fig, ax = plt.subplots(figsize=(12, 5))
         pos = 0
         group_centers, group_names = [], []
@@ -349,6 +363,8 @@ def get_load_flow_diff_plots():
         ax.set_xlabel("Original project")
         ax.set_ylabel(ylabel)
         ax.set_title(title)
+        if ylim is not None:
+            ax.set_ylim(ylim)
         ax.axhline(0, color="gray", linewidth=0.8, linestyle="--")
         ax.grid(axis="y", alpha=0.3)
 
@@ -376,6 +392,13 @@ def get_load_flow_diff_plots():
         fig.savefig(filename, dpi=150)
         plt.close(fig)
 
+    # Shared y-axis for generator and line loading (same unit: % loading)
+    loading_lo, loading_hi = zip(
+        value_range("generators", "loading"), value_range("lines", "loading")
+    )
+    LOADING_YLIM = (min(loading_lo), max(loading_hi))
+    SHARED_YLIM = {"generator_loading": LOADING_YLIM, "line_loading": LOADING_YLIM}
+
     # One image per data type
     for name, (title, ylabel, category, key) in types.items():
         plot(
@@ -383,6 +406,7 @@ def get_load_flow_diff_plots():
             f"Deviation from original: {title}",
             ylabel,
             f"{name}.png",
+            ylim=SHARED_YLIM.get(name),
         )
 
     # One image over all data
@@ -393,6 +417,53 @@ def get_load_flow_diff_plots():
         "all_data.png",
         to_pu=True,
     )
+
+    # Statistics -> CSV
+    # mean_original: mean of the original values (original units)
+    # mean_value: mean of the values remaining at this factor (original units)
+    # std_deviation: std of the deviations (factor - orig) over all elements of the project
+    rows = []
+    for project, runs in load_flow_results.items():
+        factors = [k for k in runs if k != "orig"]
+        for factor in factors:
+            factor_label = factor.replace("Factor: ", "")
+
+            # one row per data type (original units)
+            for name, (title, ylabel, category, key) in types.items():
+                dev = deviations(project, factor, category, key)
+                rows.append(
+                    {
+                        "project": project,
+                        "data_type": title,
+                        "factor": factor_label,
+                        "unit": ylabel.split("[")[1].rstrip("]"),
+                        "mean_deviation": statistics.mean(dev),
+                        "std_deviation": statistics.stdev(dev),
+                    }
+                )
+
+            # all data types together (p.u.)
+            dev_all = []
+            for category, key in [(c, k) for _, _, c, k in types.values()]:
+                scale = pu_scale[category][key]
+                dev_all += [
+                    v * scale for v in deviations(project, factor, category, key)
+                ]
+            rows.append(
+                {
+                    "project": project,
+                    "data_type": "All data types",
+                    "factor": factor_label,
+                    "unit": "p.u.",
+                    "mean_deviation": statistics.mean(dev_all),
+                    "std_deviation": statistics.stdev(dev_all),
+                }
+            )
+
+    with open("statistics.csv", "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
+        writer.writeheader()
+        writer.writerows(rows)
 
 
 # ------------------------------ Courtesy of Claude -----------------------
