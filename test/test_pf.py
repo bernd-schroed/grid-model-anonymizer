@@ -63,23 +63,32 @@ def get_example_data(path: Path, app) -> Dict[str, Dict[str, str | None]]:
     return attr_dict
 
 
+TEST_FILE = "LV Distribution Network"
+
+
 @pytest.mark.slow
 @pytest.mark.parametrize(
-    "gps_flag, desc_flag, id_flag", [(True, True, True), (False, False, False)]
+    "gps_flag, desc_flag, id_flag",
+    [(True, True, True, TEST_FILE), (False, False, False, TEST_FILE)],
 )
 class TestPowerFactory:
     """Round-trip tests for PowerFactory project anonymization and restoration,
     requiring PowerFactory."""
 
     @pytest.mark.dependency(name="test_powerfactory_anym")
-    def test_powerfactory_anym(self, gps_flag: bool, desc_flag: bool, id_flag: bool):
+    def test_powerfactory_anym(
+        self, gps_flag: bool, desc_flag: bool, id_flag: bool, test_file: str
+    ):
         """Check that anonymizing a PowerFactory project writes a mapping
         file (skipped if PF is absent)."""
         if pf_utils.get_pf_version() is False:
             pytest.skip("No PowerFactory installed")
 
         orig_file, anym_file, _, mapping_file = utils.get_test_files(
-            "Texas Grid", ".pfd", "PowerFactory", [gps_flag, desc_flag, id_flag]
+            test_file,
+            ".pfd",
+            "PowerFactory",
+            [gps_flag, desc_flag, id_flag],
         )
         seed = "test_seed"
         anonymizer = utils.SeededNameAnonymizer(seed=seed)
@@ -97,21 +106,26 @@ class TestPowerFactory:
         assert mapping_file.exists()
 
     @pytest.mark.dependency(depends=["test_powerfactory_anym"])
-    def test_powerfactory_restore(self, gps_flag: bool, desc_flag: bool, id_flag: bool):
+    def test_powerfactory_restore(
+        self, gps_flag: bool, desc_flag: bool, id_flag: bool, test_file: str
+    ):
         """Check that restoring an anonymized PowerFactory project recovers
         original attribute values."""
         if pf_utils.get_pf_version() is False:
             pytest.skip("No PowerFactory installed")
 
         orig_file, anym_file, restore_file, mapping_file = utils.get_test_files(
-            "Texas Grid", ".pfd", "PowerFactory", [gps_flag, desc_flag, id_flag]
+            test_file,
+            ".pfd",
+            "PowerFactory",
+            [gps_flag, desc_flag, id_flag],
         )
 
         restore_pf.run_powerfactory_restore(
             in_path=anym_file,
             out_path=restore_file,
             mapping_path=mapping_file,
-            project_name="Texas Grid",
+            project_name=test_file,
         )
 
         app = pf.GetApplication()
@@ -210,6 +224,7 @@ def load_flow_asserts(
                 difference_list.append(rel_error)
 
     square_error = [x**2 for x in difference_list]
+    assert square_error != 0
     mean_square_error = sum(square_error) / len(square_error)
 
     rmse = math.sqrt(mean_square_error)
