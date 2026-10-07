@@ -2,10 +2,12 @@
 
 import csv
 import itertools
+import json
 import logging
 import math
 import statistics
 import sys
+import time
 from pathlib import Path
 from typing import Dict
 
@@ -245,10 +247,10 @@ def get_load_flow_diff_plots():
     alt_factors = [0, 1, 3, 5, 10]
 
     load_flow_results = {}
-
+    calc_times = {}
     for path in paths:
         load_flow_results[path] = {}
-
+        times = [0] * len(alt_factors)
         orig_path, anym_path, _, mapping_path = utils.get_test_files(
             path, ".pfd", "PowerFactory", []
         )
@@ -257,8 +259,8 @@ def get_load_flow_diff_plots():
             app, orig_path, anon_rev=None, prefix="Anon_"
         )
         load_flow_results[path]["orig"] = orig_ldf_results
-        for alt_factor in alt_factors:
-
+        for idx, alt_factor in enumerate(alt_factors):
+            start = time.time()
             anonymizer = utils.SeededNameAnonymizer(
                 seed=seed, alteration_factor=alt_factor
             )
@@ -273,6 +275,7 @@ def get_load_flow_diff_plots():
                 remap_ids=False,
                 anonymizer=anonymizer,
             )
+            times[idx] = time.time() - start
             (
                 _,
                 anon_rev,
@@ -288,7 +291,10 @@ def get_load_flow_diff_plots():
             )
 
             load_flow_results[path][f"Factor: {alt_factor}"] = anym_ldf_results
+
             utils.delete_test_data([anym_path, mapping_path])
+
+        calc_times[path] = statistics.mean(times)
 
     # ------------------------------ Courtesy of Claude -----------------------
     # data type -> (title, y-label, category in JSON, value key)
@@ -464,6 +470,8 @@ def get_load_flow_diff_plots():
         writer = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
         writer.writeheader()
         writer.writerows(rows)
+    with open("calc_times.json", "w", encoding="utf-8") as f:
+        json.dump(calc_times, f)
 
 
 # ------------------------------ Courtesy of Claude -----------------------
