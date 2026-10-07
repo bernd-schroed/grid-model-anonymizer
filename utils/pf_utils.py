@@ -1023,8 +1023,14 @@ def get_load_flow_results(
             orig_name = name
 
         try:
+            actPower = getattr(gen, "c:p")  # get active power
+            reacPower = getattr(gen, "c:q")  # get reactive power
             genloading = getattr(gen, "c:loading")  # get loading
-            gen_entry = {"loading": genloading}
+            gen_entry = {
+                "loading": genloading,
+                "active power": actPower,
+                "reactive power": reacPower,
+            }
 
         except AttributeError:
             gen_entry = "Unknown"
