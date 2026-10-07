@@ -273,6 +273,7 @@ class PfObjects:
             "*.IntPlannedout",
             "*.EvtShc",
             "*.IntCase",
+            "*.SetPrj",
         ]
         for pat in patterns:
             new_objs = project.GetContents(pat, 1)
@@ -541,6 +542,19 @@ def get_full_name(obj) -> str:
         return obj.GetFullName()
     except AttributeError:
         return f"{obj.GetClassName()}::{get_loc_name(obj)}"
+
+
+def set_project_unit(obj, desired_unit_system=0, desired_unit="k"):
+
+    unit_system = get_str_attr(obj, "ilenunit")
+    current_unit = get_str_attr(obj, "clenexp")
+
+    if unit_system != desired_unit_system:
+        set_str_attr(obj, "ilenunit", desired_unit_system)
+    if current_unit != desired_unit and desired_unit_system == 0:
+        set_str_attr(obj, "clenexp", desired_unit)
+
+    return unit_system, current_unit
 
 
 def _to_project_relative(full_name: str) -> str:

@@ -493,6 +493,17 @@ def anonymize_objects(
     try:
         for obj in objects:
             full = obj.GetFullName()
+            logger.info(full)
+            if full.endswith(".SetPrj"):
+
+                old_unit_system, old_unit = pf_utils.set_project_unit(obj)
+    finally:
+        pf_utils.pf_bulk_mode_end(app)
+
+    pf_utils.pf_bulk_mode_begin(app)
+    try:
+        for obj in objects:
+            full = obj.GetFullName()
             if not full:
                 continue
             if full.endswith(".IntCase"):
@@ -504,6 +515,7 @@ def anonymize_objects(
                 or full.endswith(".IntUser")
                 or full.startswith(r"\Lib.IntLibrary")
                 or full.endswith(".IntFltcases")
+                or full.endswith(".SetPrj")
                 or not utils.has_suffix(full)
             ):
                 continue
@@ -569,6 +581,7 @@ def anonymize_objects(
             if (
                 full.endswith(".IntPrj")
                 or full.endswith(".IntUser")
+                or full.endswith(".SetPrj")
                 or full == ""
                 or full is None
             ):
@@ -584,11 +597,16 @@ def anonymize_objects(
                 orig_loc_name_for_jitter=orig_loc,
             )
         for obj in objects:
-            try:
-                set_line_length(obj, anonymizer=anonymizer)
-            except AttributeError:
-                logger.warning("No Line Setting possible! Impedance Alteration skipped")
-                break
+            set_line_length(obj, anonymizer=anonymizer)
+    finally:
+        pf_utils.pf_bulk_mode_end(app)
+
+    try:
+        for obj in objects:
+            full = obj.GetFullName()
+
+            if full.endswith(".SetPrj"):
+                _ = pf_utils.set_project_unit(obj, old_unit_system, old_unit)
     finally:
         pf_utils.pf_bulk_mode_end(app)
 
