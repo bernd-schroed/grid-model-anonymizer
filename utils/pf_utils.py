@@ -991,7 +991,9 @@ def get_load_flow_results(
 
     # get load flow object and execute
     ldf_object = app.GetFromStudyCase("ComLdf")  # get load flow object
-    ldf_object.Execute()  # execute load flow
+    rc = ldf_object.Execute()  # execute load flow
+    if rc != 0:
+        return
     load_flow_results = {"generators": [], "lines": [], "busses": []}
 
     # get the generators and their active/reactive power and loading

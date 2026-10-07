@@ -343,13 +343,36 @@ def set_line_length(obj: object, anonymizer: utils.SeededNameAnonymizer) -> None
     old_len = pf_utils.get_float_attr(obj, "dline")
     if old_len is None:
         return
-
     # create the new line type from old one
-    ln_type = obj.GetType()
+    try:
+        ln_type = obj.GetType()
+    except AttributeError:
+        ln_type = obj.GetAttribute("typ_id")
+
+    if ln_type is None:
+        # some lines are just clutches without relevant impedance
+        # that are skipped here
+        if obj.GetAttribute("c_ptow"):
+            return
+        # some lines are divided into segments, if this is the case
+        # then the line setting will be done in the segment and the
+        # total line can be skipped
+        try:
+            c = obj.GetChildren(0)
+            fullname = pf_utils.get_full_name(c[0])
+            if fullname.endswith("ElmLnesec"):
+                return
+            else:
+                logger.debug("Odd Child of Line Element: %s", fullname)
+        except AttributeError as e:
+            raise AttributeError from e
+
     ln_name = pf_utils.get_loc_name(ln_type)
     try:
         new_type = create_new_line_type(ln_type, new_name)
-
+        # catches Line Types that are read-only and can not be altered
+        if new_type is None:
+            return
         ratio = old_len
         # reset the impedance, since the new line length is always 1 km the ratio = old length
         set_impedances(ln_type, new_type, ratio, anonymizer, ln_name)
