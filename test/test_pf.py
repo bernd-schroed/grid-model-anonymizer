@@ -68,7 +68,7 @@ TEST_FILE = "LV Distribution Network"
 
 @pytest.mark.slow
 @pytest.mark.parametrize(
-    "gps_flag, desc_flag, id_flag",
+    "gps_flag, desc_flag, id_flag, test_file",
     [(True, True, True, TEST_FILE), (False, False, False, TEST_FILE)],
 )
 class TestPowerFactory:
