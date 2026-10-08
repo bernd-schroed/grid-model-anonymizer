@@ -421,7 +421,7 @@ def create_new_line_type(old_type, new_name: str):
 # ----------------------------
 
 
-def anonymize_time(obj, anonymizer):
+def anonymize_time(obj, anonymizer: utils.SeededNameAnonymizer):
     """
     Set a new anonymized time for powerfactory object.
 
@@ -493,10 +493,11 @@ def anonymize_objects(
     try:
         for obj in objects:
             full = obj.GetFullName()
-            logger.info(full)
             if full.endswith(".SetPrj"):
-
-                old_unit_system, old_unit = pf_utils.set_project_unit(obj)
+                anonymizer.project_unit_system, anonymizer.project_unit = (
+                    pf_utils.set_project_unit(obj)
+                )
+                break
     finally:
         pf_utils.pf_bulk_mode_end(app)
 
@@ -598,15 +599,6 @@ def anonymize_objects(
             )
         for obj in objects:
             set_line_length(obj, anonymizer=anonymizer)
-    finally:
-        pf_utils.pf_bulk_mode_end(app)
-
-    try:
-        for obj in objects:
-            full = obj.GetFullName()
-
-            if full.endswith(".SetPrj"):
-                _ = pf_utils.set_project_unit(obj, old_unit_system, old_unit)
     finally:
         pf_utils.pf_bulk_mode_end(app)
 
@@ -740,15 +732,7 @@ def check_load_flow_accuracy(
     expected range. Give a warning if the averaged error is larger than 1% and log the maximum
     deviation of the load flow results.
     """
-    (
-        _,
-        anon_rev,
-        _,
-        _,
-        _,
-        _,
-        prefix,
-    ) = utils.get_mappings(mapping_out_path)
+    _, anon_rev, _, _, _, _, prefix, _, _ = utils.get_mappings(mapping_out_path)
 
     app = pf.GetApplication()
     orig_ldf_results = pf_utils.get_load_flow_results(app, orig_path, anon_rev, prefix)

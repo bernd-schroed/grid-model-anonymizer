@@ -182,15 +182,7 @@ def test_powerfactory_load_flow_accuracy(path, alt_factor_percent):
         remap_ids=False,
         anonymizer=anonymizer,
     )
-    (
-        _,
-        anon_rev,
-        _,
-        _,
-        _,
-        _,
-        prefix,
-    ) = utils.get_mappings(mapping_path)
+    _, anon_rev, _, _, _, _, prefix, _, _ = utils.get_mappings(mapping_path)
 
     app = pf.GetApplication()
     orig_ldf_results = pf_utils.get_load_flow_results(app, orig_path, anon_rev, prefix)
@@ -291,15 +283,7 @@ def get_load_flow_diff_plots():
                 anonymizer=anonymizer,
             )
             times[idx] = time.time() - start
-            (
-                _,
-                anon_rev,
-                _,
-                _,
-                _,
-                _,
-                prefix,
-            ) = utils.get_mappings(mapping_path)
+            _, anon_rev, _, _, _, _, prefix, _, _ = utils.get_mappings(mapping_path)
 
             anym_ldf_results = pf_utils.get_load_flow_results(
                 app, anym_path, anon_rev, prefix
