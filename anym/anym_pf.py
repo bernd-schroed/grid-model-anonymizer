@@ -556,22 +556,6 @@ def anonymize_objects(
                 if new_name != orig_loc:
                     pf_utils.make_unique_if_needed(obj, new_name, anonymizer)
 
-            # (redundant second call removed in original? kept behavior minimal)
-            anonymize_string_fields(
-                obj,
-                anonymizer=anonymizer,
-                fields=[
-                    "sernum",
-                    "constr",
-                    "chr_name",
-                    "dar_src",
-                    "manuf",
-                    "for_name",
-                    "foreignKey",
-                ],
-                empty_as_zero=True,
-            )
-
     finally:
         pf_utils.pf_bulk_mode_end(app)
 
@@ -597,7 +581,6 @@ def anonymize_objects(
                 orig_cim_id=orig_cim,
                 orig_loc_name_for_jitter=orig_loc,
             )
-        for obj in objects:
             set_line_length(obj, anonymizer=anonymizer)
     finally:
         pf_utils.pf_bulk_mode_end(app)
