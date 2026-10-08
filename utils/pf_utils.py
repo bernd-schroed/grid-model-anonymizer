@@ -714,7 +714,7 @@ def desc_normalize(s: str) -> str:
     if s is None:
         return ""
 
-    t = str(s).replace("(", "").replace(")", "")
+    t = str(s)
 
     out = []
     prev_space = False
