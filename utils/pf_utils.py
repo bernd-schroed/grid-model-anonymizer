@@ -935,6 +935,13 @@ def activate_project(app, project_name: str):
     raise RuntimeError(f"Could not activate project: {project_name} (rc={rc})")
 
 
+def get_project_line_library(app):
+    prj = app.GetActiveProject()
+    lib = prj.GetChildren(1, "Library.IntPrjfolder")[0]
+    equipment_lib = lib.GetChildren(1, "Equipment Type Library.IntPrjfolder")[0]
+    return equipment_lib
+
+
 def export_project_to_pfd(app, out_path: Path):
     """
     Export the active project to a .pfd file and delete it afterward.
