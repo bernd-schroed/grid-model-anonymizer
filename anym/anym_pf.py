@@ -372,6 +372,8 @@ def set_line_length(
 
     ln_name = pf_utils.get_full_name(ln_type)
     try:
+        if ln_name.endswith(".TypTow"):
+            return
         new_type = create_new_line_type(ln_type, new_name, equipment_lib)
         # catches Line Types that are read-only and can not be altered
         if new_type is None:

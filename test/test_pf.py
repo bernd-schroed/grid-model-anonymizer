@@ -154,6 +154,7 @@ class TestPowerFactory:
             [
                 "Nine-bus System",
                 "14 Bus System(1)",
+                "IEEE 13 Node Feeder",
                 "39 Bus New England System",
                 "LV Distribution Network",
             ],
@@ -250,6 +251,7 @@ def get_load_flow_diff_plots():
     paths = [
         "Nine-bus System",
         "14 Bus System(1)",
+        "IEEE 13 Node Feeder",
         "39 Bus New England System",
         "LV Distribution Network",
     ]

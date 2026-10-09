@@ -554,9 +554,9 @@ def set_project_unit(obj, desired_unit_system=0, desired_unit="k"):
     current_unit = get_str_attr(obj, "clenexp")
 
     if unit_system != desired_unit_system:
-        set_str_attr(obj, "ilenunit", desired_unit_system)
+        safe_set(obj, "ilenunit", desired_unit_system)
     if current_unit != desired_unit and desired_unit_system == 0:
-        set_str_attr(obj, "clenexp", desired_unit)
+        safe_set(obj, "clenexp", desired_unit)
 
     return unit_system, current_unit
 
