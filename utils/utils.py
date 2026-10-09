@@ -103,7 +103,7 @@ class SeededNameAnonymizer:
         self.gps_mapping: Dict[str, dict] = {}
 
         # mapping which line was used before to restore original length and impedance values
-        self.line_mapping: Dict[str, str] = {}
+        self.line_mapping: Dict[str, dict] = {}
 
         self.project_unit_system: int = 0
         self.project_unit: str = ""
@@ -116,8 +116,6 @@ class SeededNameAnonymizer:
         if self.time_adding % 2 == 0:
             self.time_adding = -self.time_adding
         self.time_mapping: Dict[str, str] = {}
-
-        self.impedance_mapping: Dict[str, dict] = {}
 
     def translate_attr(self, attr: str, value: str) -> str:  # type: ignore # pylint:disable=unused-argument
         """

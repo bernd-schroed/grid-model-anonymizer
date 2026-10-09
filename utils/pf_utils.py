@@ -403,6 +403,10 @@ def safe_set(obj, attr, value, *, verbose: bool = False) -> bool:
                 return True
             except TypeError:
                 pass
+            except AttributeError:
+                # Cannot change elements from the internal library
+                if get_full_name(obj).startswith(r"\Lib.IntLibrary"):
+                    pass
         if verbose:
             logger.warning(
                 "TypeError SetAttribute(%s) on %s (%s): %s",
@@ -550,9 +554,9 @@ def set_project_unit(obj, desired_unit_system=0, desired_unit="k"):
     current_unit = get_str_attr(obj, "clenexp")
 
     if unit_system != desired_unit_system:
-        set_str_attr(obj, "ilenunit", desired_unit_system)
+        safe_set(obj, "ilenunit", desired_unit_system)
     if current_unit != desired_unit and desired_unit_system == 0:
-        set_str_attr(obj, "clenexp", desired_unit)
+        safe_set(obj, "clenexp", desired_unit)
 
     return unit_system, current_unit
 
@@ -935,6 +939,13 @@ def activate_project(app, project_name: str):
     raise RuntimeError(f"Could not activate project: {project_name} (rc={rc})")
 
 
+def get_project_line_library(app):
+    prj = app.GetActiveProject()
+    lib = prj.GetChildren(1, "Library.IntPrjfolder")[0]
+    equipment_lib = lib.GetChildren(1, "Equipment Type Library.IntPrjfolder")[0]
+    return equipment_lib
+
+
 def export_project_to_pfd(app, out_path: Path):
     """
     Export the active project to a .pfd file and delete it afterward.
@@ -1007,7 +1018,7 @@ def get_load_flow_results(
     ldf_object = app.GetFromStudyCase("ComLdf")  # get load flow object
     rc = ldf_object.Execute()  # execute load flow
     if rc != 0:
-        return
+        return rc
     load_flow_results = {"generators": [], "lines": [], "busses": []}
 
     # get the generators and their active/reactive power and loading

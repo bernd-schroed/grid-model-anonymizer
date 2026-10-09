@@ -323,7 +323,9 @@ def set_impedances(
         )
 
 
-def set_line_length(obj: object, anonymizer: utils.SeededNameAnonymizer) -> None:
+def set_line_length(
+    obj: object, anonymizer: utils.SeededNameAnonymizer, equipment_lib: object
+) -> None:
     """
     reset the line lengths and the new line type and storing it in the anonymizer
     for the mapping
@@ -338,6 +340,7 @@ def set_line_length(obj: object, anonymizer: utils.SeededNameAnonymizer) -> None
     """
 
     # check if the object is a power line and actually needs length resetting
+    obj_full_name = pf_utils.get_full_name(obj)
     obj_name = pf_utils.get_loc_name(obj)
     new_name = obj_name + "LineType"
     old_len = pf_utils.get_float_attr(obj, "dline")
@@ -367,19 +370,21 @@ def set_line_length(obj: object, anonymizer: utils.SeededNameAnonymizer) -> None
         except AttributeError as e:
             raise AttributeError from e
 
-    ln_name = pf_utils.get_loc_name(ln_type)
+    ln_name = pf_utils.get_full_name(ln_type)
     try:
-        new_type = create_new_line_type(ln_type, new_name)
+        if ln_name.endswith(".TypTow"):
+            return
+        new_type = create_new_line_type(ln_type, new_name, equipment_lib)
         # catches Line Types that are read-only and can not be altered
         if new_type is None:
             return
-        ratio = old_len
+
         # reset the impedance, since the new line length is always 1 km the ratio = old length
-        set_impedances(ln_type, new_type, ratio, anonymizer, ln_name)
+        set_impedances(ln_type, new_type, old_len, anonymizer, new_name)
 
         # save the new line in the anonymizer
         anonymizer.line_mapping.setdefault(
-            new_name,
+            obj_full_name,
             {
                 "name": ln_name,
                 "length": old_len,
@@ -392,7 +397,7 @@ def set_line_length(obj: object, anonymizer: utils.SeededNameAnonymizer) -> None
         raise AttributeError from e
 
 
-def create_new_line_type(old_type, new_name: str):
+def create_new_line_type(old_type, new_name: str, equipment_lib):
     """
     create a new line type object as a copy of the old line type
 
@@ -408,11 +413,9 @@ def create_new_line_type(old_type, new_name: str):
     new_type : line type object
         The new line type
     """
-    try:
-        parent = old_type.GetParent()
-        new_type = parent.AddCopy(old_type, new_name)
-    except AttributeError as e:
-        raise AttributeError from e
+    new_type = equipment_lib.CreateObject("TypLne")
+    new_type.CopyData(old_type)
+    pf_utils.safe_set(new_type, "loc_name", new_name, verbose=False)
     return new_type
 
 
@@ -559,6 +562,8 @@ def anonymize_objects(
     finally:
         pf_utils.pf_bulk_mode_end(app)
 
+    equipment_lib = pf_utils.get_project_line_library(app)
+
     pf_utils.pf_bulk_mode_begin(app)
     try:
         for obj in objects:
@@ -581,7 +586,7 @@ def anonymize_objects(
                 orig_cim_id=orig_cim,
                 orig_loc_name_for_jitter=orig_loc,
             )
-            set_line_length(obj, anonymizer=anonymizer)
+            set_line_length(obj, anonymizer=anonymizer, equipment_lib=equipment_lib)
     finally:
         pf_utils.pf_bulk_mode_end(app)
 
