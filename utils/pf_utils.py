@@ -403,6 +403,10 @@ def safe_set(obj, attr, value, *, verbose: bool = False) -> bool:
                 return True
             except TypeError:
                 pass
+            except AttributeError:
+                # Cannot change elements from the internal library
+                if get_full_name(obj).startswith(r"\Lib.IntLibrary"):
+                    pass
         if verbose:
             logger.warning(
                 "TypeError SetAttribute(%s) on %s (%s): %s",
@@ -1014,7 +1018,7 @@ def get_load_flow_results(
     ldf_object = app.GetFromStudyCase("ComLdf")  # get load flow object
     rc = ldf_object.Execute()  # execute load flow
     if rc != 0:
-        return
+        return rc
     load_flow_results = {"generators": [], "lines": [], "busses": []}
 
     # get the generators and their active/reactive power and loading

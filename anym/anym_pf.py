@@ -340,6 +340,7 @@ def set_line_length(
     """
 
     # check if the object is a power line and actually needs length resetting
+    obj_full_name = pf_utils.get_full_name(obj)
     obj_name = pf_utils.get_loc_name(obj)
     new_name = obj_name + "LineType"
     old_len = pf_utils.get_float_attr(obj, "dline")
@@ -369,7 +370,7 @@ def set_line_length(
         except AttributeError as e:
             raise AttributeError from e
 
-    ln_name = pf_utils.get_loc_name(ln_type)
+    ln_name = pf_utils.get_full_name(ln_type)
     try:
         new_type = create_new_line_type(ln_type, new_name, equipment_lib)
         # catches Line Types that are read-only and can not be altered
@@ -381,7 +382,7 @@ def set_line_length(
 
         # save the new line in the anonymizer
         anonymizer.line_mapping.setdefault(
-            new_name,
+            obj_full_name,
             {
                 "name": ln_name,
                 "length": old_len,

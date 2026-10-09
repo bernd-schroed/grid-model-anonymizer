@@ -65,10 +65,8 @@ def make_obj_dict(objects: List) -> Dict[str, object]:
     for obj in objects:
         # since one loc_name can be given to multiple loc names
         # the obj_class is added to the key
-        obj_name = pf_utils.get_loc_name(obj)
-        obj_class = obj.GetClassName()
-        obj_key = obj_name + "." + obj_class
-        objects_dict[obj_key] = obj
+        obj_name = pf_utils.get_full_name(obj)
+        objects_dict[obj_name] = obj
     return objects_dict
 
 
@@ -275,9 +273,7 @@ def get_all_line_types(objects_dict: Dict[str, object]) -> Dict[str, object]:
     return
 
 
-def restore_line_type(
-    objects_dict: Dict[str, object], line_map: Dict[str, str]
-) -> None:
+def restore_line_type(object_dict, line_map: Dict[str, Dict]) -> None:
     """
     Restoring all old line types, line lengths and impedances
 
@@ -290,34 +286,23 @@ def restore_line_type(
         and old lines as data
     """
 
-    all_types = get_all_line_types(objects_dict)
-    try:
-        for ln_type_key, ln_type_obj in all_types.items():
+    for ln_type_key, ln_type_data in line_map.items():
 
-            if ln_type_key.endswith("LineType.TypLne"):
+        line_obj = object_dict[ln_type_key]
+        orig_type_name = ln_type_data["name"]
+        anon_type = line_obj.GetAttribute("typ_id")
 
-                # get all the data about the line and line type
-                anon_line_name = ln_type_key[:15]
+        type_lib = anon_type.GetParent()
+        orig_ln_type = type_lib.SearchObject(orig_type_name)
 
-                line_map_key = ln_type_key[:23]
-                orig_type = line_map[line_map_key]
+        orig_ln_length = ln_type_data["length"]
 
-                anon_line_key = anon_line_name + ".ElmLne"
-                line_obj = objects_dict[anon_line_key]
+        # reset the line information
+        pf_utils.safe_set(line_obj, "dline", float(orig_ln_length), verbose=False)
+        pf_utils.safe_set(line_obj, "typ_id", orig_ln_type, verbose=False)
 
-                orig_type_key = orig_type["name"] + ".TypLne"
-                orig_type_obj = all_types[orig_type_key]
-
-                orig_length = orig_type["length"]
-
-                # reset the line information
-                pf_utils.safe_set(line_obj, "dline", float(orig_length), verbose=False)
-                pf_utils.safe_set(line_obj, "typ_id", orig_type_obj, verbose=False)
-
-                # delete the anon now unused line object
-                ln_type_obj.Delete()
-    except AttributeError:
-        pass
+        # delete the anon now unused line object
+        anon_type.Delete()
 
 
 def restore_gps_from_anonymization(

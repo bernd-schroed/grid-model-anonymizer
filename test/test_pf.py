@@ -155,6 +155,7 @@ class TestPowerFactory:
                 "Nine-bus System",
                 "14 Bus System(1)",
                 "39 Bus New England System",
+                "LV Distribution Network",
             ],
             [-1, 0, 3, 5, 10],
         ),
@@ -250,6 +251,7 @@ def get_load_flow_diff_plots():
         "Nine-bus System",
         "14 Bus System(1)",
         "39 Bus New England System",
+        "LV Distribution Network",
     ]
     alt_factors = [0, 1, 3, 5, 10]
 
