@@ -603,6 +603,7 @@ def run_powerfactory_import_export(
     gps: bool,
     remap_ids: bool,
     anonymizer: utils.SeededNameAnonymizer,
+    with_load_flow_check=True,
 ):
     """
     End-to-end PF anonymization: import .pfd -> anonymize -> export .pfd.
@@ -705,12 +706,13 @@ def run_powerfactory_import_export(
         logger.warning("Export not executed: %s", e)
     except RuntimeError as e:
         logger.error("Export failed: %s", e)
-    try:
-        check_load_flow_accuracy(
-            in_path, out_path, mapping_out_path, anonymizer.alteration_factor
-        )
-    except AttributeError as e:
-        logger.error("Load flow Analysis not possible. Error Message: %s", e)
+    if with_load_flow_check:
+        try:
+            check_load_flow_accuracy(
+                in_path, out_path, mapping_out_path, anonymizer.alteration_factor
+            )
+        except AttributeError as e:
+            logger.error("Load flow Analysis not possible. Error Message: %s", e)
 
 
 def check_load_flow_accuracy(

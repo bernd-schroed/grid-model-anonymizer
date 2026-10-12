@@ -285,6 +285,7 @@ def get_load_flow_diff_plots():
                 gps=False,
                 remap_ids=False,
                 anonymizer=anonymizer,
+                with_load_flow_check=False,
             )
             times[idx] = time.time() - start
             _, anon_rev, _, _, _, _, prefix, _, _ = utils.get_mappings(mapping_path)
