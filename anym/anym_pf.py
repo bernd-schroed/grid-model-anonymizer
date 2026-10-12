@@ -323,6 +323,47 @@ def set_impedances(
         )
 
 
+def set_tower_impedances(
+    old_type: object,
+    new_type: object,
+    ratio: float,
+    anonymizer: utils.SeededNameAnonymizer,
+    ln_name: str,
+    equipment_library: str,
+) -> None:
+    """
+    x
+    """
+
+    # print(new_type)
+    old_type_conductors = old_type.GetAttribute("pcond_c")
+    new_type_conductors = [""] * len(old_type_conductors)
+    for idx, conductor in enumerate(old_type_conductors):
+        cond_name = ln_name + "_Cond_" + str(idx)
+        new_cond = create_new_line_type(
+            conductor, cond_name, equipment_library, "TypCon"
+        )
+        for impedance_type in ["rpha", "rpha_tmax"]:
+
+            DC_impedance = pf_utils.get_float_attr(conductor, impedance_type)
+
+            # set the alteration
+            alteration = utils.get_alteration(
+                anonymizer=anonymizer,
+                name=impedance_type,
+                current_id=ln_name,
+            )
+
+            new_impedance_per_km = DC_impedance * alteration * ratio
+
+            pf_utils.safe_set(
+                new_cond, impedance_type, float(new_impedance_per_km), verbose=False
+            )
+        new_type_conductors[idx] = new_cond
+    pf_utils.safe_set(new_type, "pcond_c", new_type_conductors, verbose=False)
+    print("Stuff")
+
+
 def set_line_length(
     obj: object, anonymizer: utils.SeededNameAnonymizer, equipment_lib: object
 ) -> None:
@@ -373,14 +414,14 @@ def set_line_length(
     ln_name = pf_utils.get_full_name(ln_type)
     try:
         if ln_name.endswith(".TypTow"):
-            return
-        new_type = create_new_line_type(ln_type, new_name, equipment_lib)
-        # catches Line Types that are read-only and can not be altered
-        if new_type is None:
-            return
-
-        # reset the impedance, since the new line length is always 1 km the ratio = old length
-        set_impedances(ln_type, new_type, old_len, anonymizer, new_name)
+            new_type = create_new_line_type(ln_type, new_name, equipment_lib, "TypTow")
+            set_tower_impedances(
+                ln_type, new_type, old_len, anonymizer, new_name, equipment_lib
+            )
+        else:
+            new_type = create_new_line_type(ln_type, new_name, equipment_lib)
+            # reset the impedance, since the new line length is always 1 km the ratio = old length
+            set_impedances(ln_type, new_type, old_len, anonymizer, new_name)
 
         # save the new line in the anonymizer
         anonymizer.line_mapping.setdefault(
@@ -397,7 +438,7 @@ def set_line_length(
         raise AttributeError from e
 
 
-def create_new_line_type(old_type, new_name: str, equipment_lib):
+def create_new_line_type(old_type, new_name: str, equipment_lib, object_type="TypLne"):
     """
     create a new line type object as a copy of the old line type
 
@@ -413,7 +454,7 @@ def create_new_line_type(old_type, new_name: str, equipment_lib):
     new_type : line type object
         The new line type
     """
-    new_type = equipment_lib.CreateObject("TypLne")
+    new_type = equipment_lib.CreateObject(object_type)
     new_type.CopyData(old_type)
     pf_utils.safe_set(new_type, "loc_name", new_name, verbose=False)
     return new_type
