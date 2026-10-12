@@ -418,9 +418,12 @@ def create_new_line_type(old_type, new_name: str, equipment_lib):
         nphases = old_type.GetAttribute("nphas")
         main_cond_idx = nphases.index(max(nphases))
         conductor = old_type.GetAttribute("pcond_c")[main_cond_idx]
-        for line_attr in ["uline", "sline"]:
-            cond_variable = pf_utils.get_float_attr(conductor, line_attr)
-            pf_utils.safe_set(new_type, line_attr, cond_variable, verbose=False)
+
+        cond_norm_voltage = pf_utils.get_float_attr(conductor, "uline")
+        pf_utils.safe_set(new_type, "uline", cond_norm_voltage, verbose=False)
+
+        cond_norm_current = pf_utils.get_float_attr(conductor, "sline") / 1000
+        pf_utils.safe_set(new_type, "sline", cond_norm_current, verbose=False)
 
         pf_utils.safe_set(new_type, "nlnph", int(nphases[main_cond_idx]), verbose=False)
         pf_utils.safe_set(new_type, "nneutral", 1, verbose=False)
