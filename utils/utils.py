@@ -110,10 +110,10 @@ class SeededNameAnonymizer:
 
         # mapping when the time for case studies are set
         time_adding = int(get_hash_str(seed, "study_casereset"), 16)
-        self.time_adding: int = int(
-            time_adding % 1000000000  # 1 Billion seconds ~= 30 Years
-        )
-        if self.time_adding % 2 == 0:
+        time_adding: int = int(time_adding % 11000)  # 11000 Days ~= 30 Years
+        self.time_adding = int(time_adding * 86400)  # convert days to seconds
+        first_digit = int(str(time_adding)[:1])
+        if first_digit % 2 == 0:
             self.time_adding = -self.time_adding
         self.time_mapping: Dict[str, str] = {}
 

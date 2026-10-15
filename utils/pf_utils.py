@@ -44,14 +44,16 @@ import psutil
 logger = logging.getLogger("pf_utils.py")
 
 IMPEDANCE_TYPES = [
-    "rline",
-    "xline",
-    "cline",
-    "lline",
-    "rline0",
-    "xline0",
-    "cline0",
-    "lline0",
+    ("rline", "R1"),
+    ("xline", "X1"),
+    ("cline", "C1"),
+    ("bline", "B1"),
+    ("gline", "G1"),
+    ("rline0", "R0"),
+    ("xline0", "X0"),
+    ("cline0", "C0"),
+    ("bline0", "B0"),
+    ("gline0", "G0"),
 ]  # do the 0 impedances actually need to be reset?
 
 
