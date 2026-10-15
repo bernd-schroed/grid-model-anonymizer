@@ -419,6 +419,9 @@ def create_new_line_type(old_type, new_name: str, equipment_lib):
         main_cond_idx = nphases.index(max(nphases))
         conductor = old_type.GetAttribute("pcond_c")[main_cond_idx]
 
+        nom_frequency = pf_utils.get_float_attr(old_type, "frnom")
+        pf_utils.safe_set(new_type, "frnom", nom_frequency, verbose=False)
+
         cond_norm_voltage = pf_utils.get_float_attr(conductor, "uline")
         pf_utils.safe_set(new_type, "uline", cond_norm_voltage, verbose=False)
 
