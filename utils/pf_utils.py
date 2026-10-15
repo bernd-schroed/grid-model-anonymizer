@@ -1,3 +1,4 @@
+# pylint: disable=too-many-lines
 """
 pf_utils.py
 ===========
@@ -551,7 +552,29 @@ def get_full_name(obj) -> str:
 
 
 def set_project_unit(obj, desired_unit_system=0, desired_unit="k"):
+    """
+    returns the equipment type library object of the current project
 
+    Parameters
+    ----------
+    obj :
+        the PF object.
+    desired_unit system : int
+        which measurement system to use:
+            0 : metric
+            1 : English-Transmission
+            2 : English-Industry
+    desired_unit : str
+        which prefix in metric system:
+            "" : no prefix
+            "k": kilometer
+            "m": millimeter
+            etc.
+
+    Returns
+    -------
+    equipment_lib: The .IntPrjFolder for the Equipment Type Library.
+    """
     unit_system = get_str_attr(obj, "ilenunit")
     current_unit = get_str_attr(obj, "clenexp")
 
@@ -942,6 +965,17 @@ def activate_project(app, project_name: str):
 
 
 def get_project_line_library(app):
+    """
+    returns the equipment type library object of the current project
+
+    Parameters
+    ----------
+    app : the PowerFactory application object (from pf.GetApplication()).
+
+    Returns
+    -------
+    equipment_lib: The .IntPrjFolder for the Equipment Type Library.
+    """
     prj = app.GetActiveProject()
     lib = prj.GetChildren(1, "Library.IntPrjfolder")[0]
     equipment_lib = lib.GetChildren(1, "Equipment Type Library.IntPrjfolder")[0]
@@ -1005,7 +1039,7 @@ def kill_powerfactory():
 
 def get_load_flow_results(
     app, path: Path, anon_rev: dict, prefix: str, project_name: str = None
-):
+) -> dict[str, dict]:
     """Main Parts are taken from
     https://thesmartinsights.com/run-digsilent-powerfactory-via-the-python-api-jump-start-to-your-powerfactory-automatization/
     and adapted for this use case"""

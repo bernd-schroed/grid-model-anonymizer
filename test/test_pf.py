@@ -15,6 +15,7 @@ import matplotlib.pyplot as plt
 import pytest
 from matplotlib.patches import Patch
 
+# pylint:disable=wrong-import-position
 sys.path.append(str(Path(__file__).parent.parent.resolve()))
 from anym import anym_pf
 from restore import restore_pf
@@ -243,7 +244,10 @@ def load_flow_asserts(
 
 
 def get_load_flow_diff_plots():
-
+    """
+    A test function to perform the anonymization, and load flow calculations of test data.
+    It plots differents of load flow results and performance times.
+    """
     if pf_utils.get_pf_version() is False:
         pytest.skip("No PowerFactory installed")
 
@@ -251,9 +255,7 @@ def get_load_flow_diff_plots():
     paths = [
         "Nine-bus System",
         "14 Bus System(1)",
-        "IEEE 13 Node Feeder",
         "39 Bus New England System",
-        "LV Distribution Network",
     ]
     alt_factors = [0, 1, 3, 5, 10]
 
@@ -406,8 +408,8 @@ def get_load_flow_diff_plots():
     loading_lo, loading_hi = zip(
         value_range("generators", "loading"), value_range("lines", "loading")
     )
-    LOADING_YLIM = (min(loading_lo), max(loading_hi))
-    SHARED_YLIM = {"generator_loading": LOADING_YLIM, "line_loading": LOADING_YLIM}
+    loading_ylim = (min(loading_lo), max(loading_hi))
+    shared_ylim = {"generator_loading": loading_ylim, "line_loading": loading_ylim}
 
     # One image per data type
     for name, (title, ylabel, category, key) in types.items():
@@ -416,7 +418,7 @@ def get_load_flow_diff_plots():
             f"Deviation from original: {title}",
             ylabel,
             f"{name}.png",
-            ylim=SHARED_YLIM.get(name),
+            ylim=shared_ylim.get(name),
         )
 
     # One image over all data

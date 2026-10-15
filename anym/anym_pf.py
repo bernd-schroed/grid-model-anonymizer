@@ -748,7 +748,7 @@ def check_load_flow_accuracy(
 
     difference_list = []
     for type_key, type_entry in orig_ldf_results.items():
-        for elem_key, elem_entry in type_entry.items():
+        for elem_key, elem_entry in type_entry.items():  # pylint:disable=no-member
 
             for value_key, orig_value_entry in elem_entry.items():
                 if anym_ldf_results[type_key][elem_key] == "Unknown":
