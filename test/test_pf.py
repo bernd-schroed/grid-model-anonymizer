@@ -320,17 +320,43 @@ def get_load_flow_diff_plots():
         "lines": {"loading": 1 / 100},
         "busses": {"u": 1.0, "deg": math.pi / 180},
     }
+    # Whisker range: (5, 95) -> whiskers reach the 5th/95th percentile, so at most
+    # ~10% of the values are drawn as outlier points. Default matplotlib is 1.5 (IQR).
+    # Set SHOW_FLIERS = False to hide outlier points completely.
+    whis = (1, 99)
+    show_fliers = True
+
+    def in_total(category, key):
+        """True if this data type is part of the p.u. 'all data' plot."""
+        return key in pu_scale.get(category, {})
 
     colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
 
-    def deviations(project, factor, category, key):
-        """Deviation (factor - orig) per element of a project."""
-        orig = load_flow_results[project]["orig"][category]
-        fac = load_flow_results[project][factor][category]
-        return [fac[name][key] - orig[name][key] for name in orig]
+    def deviations(project, factor, category, key, pu=False):
+        """Deviation (factor - orig) per element of a project.
+
+        Returns an empty list if the data type is missing for this project/factor.
+        Elements that lack the value in orig or in the factor run are skipped.
+        With pu=True the deviation is converted to per unit.
+        """
+        orig = load_flow_results[project].get("orig", {}).get(category) or {}
+        fac = load_flow_results[project].get(factor, {}).get(category) or {}
+        devs = []
+        for name, o in orig.items():
+            f = fac.get(name)
+            if f is None or key not in o or key not in f:
+                continue
+            d = f[key] - o[key]
+            if pu:
+                d *= pu_scale[category][key]
+            devs.append(d)
+        return devs
 
     def value_range(category, key):
-        """Min/max of all deviations for one data type (with a small margin)."""
+        """Min/max of all deviations for one data type (with a small margin).
+
+        Returns None if there is no data at all.
+        """
         vals = [
             v
             for project, runs in load_flow_results.items()
@@ -338,6 +364,8 @@ def get_load_flow_diff_plots():
             if factor != "orig"
             for v in deviations(project, factor, category, key)
         ]
+        if not vals:
+            return None
         margin = 0.05 * (max(vals) - min(vals))
         return min(vals) - margin, max(vals) + margin
 
@@ -346,26 +374,45 @@ def get_load_flow_diff_plots():
         pos = 0
         group_centers, group_names = [], []
         factor_names = []
+        n_boxes = 0
         for project, runs in load_flow_results.items():
             factors = [k for k in runs if k != "orig"]
-            start = pos
-            for i, factor in enumerate(factors):
+            vals_per_factor = []
+            for factor in factors:
                 vals = []
                 for category, key in types:
-                    scale = pu_scale[category][key] if to_pu else 1.0
-                    vals += [
-                        v * scale for v in deviations(project, factor, category, key)
-                    ]
-                bp = ax.boxplot(vals, positions=[pos], widths=0.8, patch_artist=True)
-                bp["boxes"][0].set_facecolor(colors[i % len(colors)])
-                for m in bp["medians"]:
-                    m.set_color("black")
+                    vals += deviations(project, factor, category, key, pu=to_pu)
+                vals_per_factor.append(vals)
+            if not any(
+                vals_per_factor
+            ):  # project has no data for this plot -> leave it out
+                continue
+            start = pos
+            for i, (factor, vals) in enumerate(zip(factors, vals_per_factor)):
                 if factor not in factor_names:
                     factor_names.append(factor)
+                if vals:  # single factor without data -> empty slot instead of failing
+                    bp = ax.boxplot(
+                        vals,
+                        positions=[pos],
+                        widths=0.8,
+                        patch_artist=True,
+                        whis=whis,
+                        showfliers=show_fliers,
+                    )
+                    bp["boxes"][0].set_facecolor(colors[i % len(colors)])
+                    for m in bp["medians"]:
+                        m.set_color("black")
+                    n_boxes += 1
                 pos += 1
             group_centers.append((start + pos - 1) / 2)
             group_names.append(project)
             pos += 1  # gap between project groups
+
+        if n_boxes == 0:
+            plt.close(fig)
+            print(f"Skipped {filename}: no data")
+            return
 
         ax.set_xticks(group_centers)
         ax.set_xticklabels(group_names)
@@ -402,11 +449,19 @@ def get_load_flow_diff_plots():
         plt.close(fig)
 
     # Shared y-axis for generator and line loading (same unit: % loading)
-    loading_lo, loading_hi = zip(
-        value_range("generators", "loading"), value_range("lines", "loading")
-    )
-    LOADING_YLIM = (min(loading_lo), max(loading_hi))
-    SHARED_YLIM = {"generator_loading": LOADING_YLIM, "line_loading": LOADING_YLIM}
+    loading_ranges = [
+        r
+        for r in (value_range("generators", "loading"), value_range("lines", "loading"))
+        if r is not None
+    ]
+    if loading_ranges:
+        loading_ylim = (
+            min(r[0] for r in loading_ranges),
+            max(r[1] for r in loading_ranges),
+        )
+        shared_ylim = {"generator_loading": loading_ylim, "line_loading": loading_ylim}
+    else:
+        shared_ylim = {}
 
     # One image per data type
     for name, (title, ylabel, category, key) in types.items():
@@ -415,12 +470,12 @@ def get_load_flow_diff_plots():
             f"Deviation from original: {title}",
             ylabel,
             f"{name}.png",
-            ylim=SHARED_YLIM.get(name),
+            ylim=shared_ylim.get(name),
         )
 
     # One image over all data
     plot(
-        [(c, k) for _, _, c, k in types.values()],
+        [(c, k) for _, _, c, k in types.values() if in_total(c, k)],
         "Deviation from original: all data types",
         "Δ [p.u.]",
         "all_data.png",
@@ -428,9 +483,13 @@ def get_load_flow_diff_plots():
     )
 
     # Statistics -> CSV
-    # mean_original: mean of the original values (original units)
-    # mean_value: mean of the values remaining at this factor (original units)
-    # std_deviation: std of the deviations (factor - orig) over all elements of the project
+    def mean_std(values):
+        """Mean and sample std; empty cell if there is not enough data."""
+        mean = statistics.mean(values) if len(values) >= 1 else ""
+        std = statistics.stdev(values) if len(values) >= 2 else ""
+        return mean, std
+
+    # mean_deviation / std_deviation: over all elements of the project (factor - orig)
     rows = []
     for project, runs in load_flow_results.items():
         factors = [k for k in runs if k != "orig"]
@@ -440,32 +499,35 @@ def get_load_flow_diff_plots():
             # one row per data type (original units)
             for name, (title, ylabel, category, key) in types.items():
                 dev = deviations(project, factor, category, key)
+                mean, std = mean_std(dev)
                 rows.append(
                     {
                         "project": project,
                         "data_type": title,
                         "factor": factor_label,
                         "unit": ylabel.split("[")[1].rstrip("]"),
-                        "mean_deviation": statistics.mean(dev),
-                        "std_deviation": statistics.stdev(dev),
+                        "n_elements": len(dev),
+                        "mean_deviation": mean,
+                        "std_deviation": std,
                     }
                 )
 
             # all data types together (p.u.)
             dev_all = []
-            for category, key in [(c, k) for _, _, c, k in types.values()]:
-                scale = pu_scale[category][key]
-                dev_all += [
-                    v * scale for v in deviations(project, factor, category, key)
-                ]
+            for _, _, category, key in types.values():
+                if not in_total(category, key):
+                    continue
+                dev_all += deviations(project, factor, category, key, pu=True)
+            mean, std = mean_std(dev_all)
             rows.append(
                 {
                     "project": project,
                     "data_type": "All data types",
                     "factor": factor_label,
                     "unit": "p.u.",
-                    "mean_deviation": statistics.mean(dev_all),
-                    "std_deviation": statistics.stdev(dev_all),
+                    "n_elements": len(dev_all),
+                    "mean_deviation": mean,
+                    "std_deviation": std,
                 }
             )
 
@@ -473,8 +535,6 @@ def get_load_flow_diff_plots():
         writer = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
         writer.writeheader()
         writer.writerows(rows)
-    with open("calc_times.json", "w", encoding="utf-8") as f:
-        json.dump(calc_times, f)
 
 
 # ------------------------------ Courtesy of Claude -----------------------
