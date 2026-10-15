@@ -275,9 +275,8 @@ def _gps_apply_and_record(
 
 
 def set_impedances(
-    old_type: object,
+    obj: object,
     new_type: object,
-    ratio: float,
     anonymizer: utils.SeededNameAnonymizer,
     ln_name: str,
 ) -> None:
@@ -303,23 +302,21 @@ def set_impedances(
         seed so different lines get independent alteration factors.
     """
 
-    for impedance_type in pf_utils.IMPEDANCE_TYPES:
-        impedance_value_per_km = pf_utils.get_float_attr(old_type, impedance_type)
+    for impedance_type_per_km, impedance_type_total in pf_utils.IMPEDANCE_TYPES:
+        impedance_value = pf_utils.get_float_attr(obj, impedance_type_total)
         # check if there actually is an impedance
-        if impedance_value_per_km is None:
-            return
 
         # set the alteration
         alteration = utils.get_alteration(
             anonymizer=anonymizer,
-            name=impedance_type,
+            name=impedance_type_per_km,
             current_id=ln_name,
         )
 
-        new_impedance_per_km = impedance_value_per_km * alteration * ratio
+        new_impedance_per_km = impedance_value * alteration
 
         pf_utils.safe_set(
-            new_type, impedance_type, float(new_impedance_per_km), verbose=False
+            new_type, impedance_type_per_km, float(new_impedance_per_km), verbose=False
         )
 
 
@@ -372,15 +369,13 @@ def set_line_length(
 
     ln_name = pf_utils.get_full_name(ln_type)
     try:
-        if ln_name.endswith(".TypTow"):
-            return
         new_type = create_new_line_type(ln_type, new_name, equipment_lib)
         # catches Line Types that are read-only and can not be altered
         if new_type is None:
             return
 
         # reset the impedance, since the new line length is always 1 km the ratio = old length
-        set_impedances(ln_type, new_type, old_len, anonymizer, new_name)
+        set_impedances(obj, new_type, anonymizer, new_name)
 
         # save the new line in the anonymizer
         anonymizer.line_mapping.setdefault(
@@ -414,7 +409,28 @@ def create_new_line_type(old_type, new_name: str, equipment_lib):
         The new line type
     """
     new_type = equipment_lib.CreateObject("TypLne")
-    new_type.CopyData(old_type)
+    old_name = pf_utils.get_full_name(old_type)
+    if old_name.endswith("TypLne"):
+
+        new_type.CopyData(old_type)
+    elif old_name.endswith("TypTow"):
+
+        nphases = old_type.GetAttribute("nphas")
+        main_cond_idx = nphases.index(max(nphases))
+        conductor = old_type.GetAttribute("pcond_c")[main_cond_idx]
+
+        nom_frequency = pf_utils.get_float_attr(old_type, "frnom")
+        pf_utils.safe_set(new_type, "frnom", nom_frequency, verbose=False)
+
+        cond_norm_voltage = pf_utils.get_float_attr(conductor, "uline")
+        pf_utils.safe_set(new_type, "uline", cond_norm_voltage, verbose=False)
+
+        cond_norm_current = pf_utils.get_float_attr(conductor, "sline") / 1000
+        pf_utils.safe_set(new_type, "sline", cond_norm_current, verbose=False)
+
+        pf_utils.safe_set(new_type, "nlnph", int(nphases[main_cond_idx]), verbose=False)
+        pf_utils.safe_set(new_type, "nneutral", 1, verbose=False)
+
     pf_utils.safe_set(new_type, "loc_name", new_name, verbose=False)
     return new_type
 
@@ -603,6 +619,7 @@ def run_powerfactory_import_export(
     gps: bool,
     remap_ids: bool,
     anonymizer: utils.SeededNameAnonymizer,
+    with_load_flow_check=True,
 ):
     """
     End-to-end PF anonymization: import .pfd -> anonymize -> export .pfd.
@@ -705,12 +722,13 @@ def run_powerfactory_import_export(
         logger.warning("Export not executed: %s", e)
     except RuntimeError as e:
         logger.error("Export failed: %s", e)
-    try:
-        check_load_flow_accuracy(
-            in_path, out_path, mapping_out_path, anonymizer.alteration_factor
-        )
-    except AttributeError as e:
-        logger.error("Load flow Analysis not possible. Error Message: %s", e)
+    if with_load_flow_check:
+        try:
+            check_load_flow_accuracy(
+                in_path, out_path, mapping_out_path, anonymizer.alteration_factor
+            )
+        except AttributeError as e:
+            logger.error("Load flow Analysis not possible. Error Message: %s", e)
 
 
 def check_load_flow_accuracy(
@@ -730,7 +748,7 @@ def check_load_flow_accuracy(
 
     difference_list = []
     for type_key, type_entry in orig_ldf_results.items():
-        for elem_key, elem_entry in type_entry.items():
+        for elem_key, elem_entry in type_entry.items():  # pylint:disable=no-member
 
             for value_key, orig_value_entry in elem_entry.items():
                 if anym_ldf_results[type_key][elem_key] == "Unknown":

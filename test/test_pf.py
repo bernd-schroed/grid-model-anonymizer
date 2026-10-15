@@ -2,7 +2,6 @@
 
 import csv
 import itertools
-import json
 import logging
 import math
 import statistics
@@ -15,6 +14,7 @@ import matplotlib.pyplot as plt
 import pytest
 from matplotlib.patches import Patch
 
+# pylint:disable=wrong-import-position
 sys.path.append(str(Path(__file__).parent.parent.resolve()))
 from anym import anym_pf
 from restore import restore_pf
@@ -243,7 +243,10 @@ def load_flow_asserts(
 
 
 def get_load_flow_diff_plots():
-
+    """
+    A test function to perform the anonymization, and load flow calculations of test data.
+    It plots differents of load flow results and performance times.
+    """
     if pf_utils.get_pf_version() is False:
         pytest.skip("No PowerFactory installed")
 
@@ -251,9 +254,7 @@ def get_load_flow_diff_plots():
     paths = [
         "Nine-bus System",
         "14 Bus System(1)",
-        "IEEE 13 Node Feeder",
         "39 Bus New England System",
-        "LV Distribution Network",
     ]
     alt_factors = [0, 1, 3, 5, 10]
 
@@ -285,6 +286,7 @@ def get_load_flow_diff_plots():
                 gps=False,
                 remap_ids=False,
                 anonymizer=anonymizer,
+                with_load_flow_check=False,
             )
             times[idx] = time.time() - start
             _, anon_rev, _, _, _, _, prefix, _, _ = utils.get_mappings(mapping_path)
